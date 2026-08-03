@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# Digital Twin — project configuration
+# Direct dependencies are pinned to the exact versions verified in the
+# project's dev environment for reproducible installs.
+# ---------------------------------------------------------------------------
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "digital-twin"
+version = "0.2.0"
+description = "An AI digital twin that represents the candidate's career with defense-in-depth prompt-injection guardrails."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Mark Higgins" }]
+dependencies = [
+    # LLM client + validation
+    "openai==2.52.1",
+    "pydantic==2.13.4",
+    "pydantic[email]==2.13.4",
+    "pydantic-settings==2.14.2",
+
+    # Web UI
+    "gradio==6.22.0",
+
+    # HTTP (Pushover notifications)
+    "httpx==0.28.1",
+
+    # CV ingestion (PDF fallback)
+    "pypdf==6.14.2",
+
+    # Env loading
+    "python-dotenv==1.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov>=6,<8",
+    "anyio==4.14.2",
+    "ruff>=0.9,<1.0",
+    "mypy>=1.14,<2.0",
+]
+
+[tool.setuptools]
+packages = ["digitaltwin"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-warnings"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

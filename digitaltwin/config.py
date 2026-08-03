@@ -1,0 +1,145 @@
+"""Application configuration.
+
+Centralized settings loaded from environment variables (via .env for local
+dev). Single source of truth for tunables so that no module reads
+``os.getenv`` directly.
+"""
+
+from __future__ import annotations
+
+import os
+from functools import lru_cache
+from pathlib import Path
+from typing import Annotated, Literal
+
+from pydantic import AfterValidator, Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# ---------------------------------------------------------------------------
+# Model client settings (OpenAI-compatible). The base URL can be pointed at
+# any OpenAI-compatible endpoint (Azure, local vLLM, etc.) for portability.
+# ---------------------------------------------------------------------------
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # --- OpenAI / model client -------------------------------------------
+    openai_api_key: SecretStr | None = Field(
+        default=None, description="OpenAI (or compatible) API key."
+    )
+    openai_base_url: str | None = Field(
+        default=None, description="Optional base URL for an OpenAI-compatible endpoint."
+    )
+    model_name: str = Field(default="gpt-5.4-mini", description="Chat model name.")
+
+    # --- Conversation limits (cost / injection-surface control) ----------
+    max_message_chars: int = Field(
+        default=500, ge=1, description="Maximum characters per user message."
+    )
+    max_history_turns: int = Field(
+        default=10, ge=0, description="Max prior conversation turns sent to the model."
+    )
+
+    # --- Rate limiting (per client IP) ------------------------------------
+    rate_limit_requests: int = Field(
+        default=5, ge=1, description="Max requests per IP per window."
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60, ge=1, description="Rate-limit window length in seconds."
+    )
+
+    # --- Trusted proxies ---------------------------------------------------
+    # Only these proxy addresses (or 0.0.0.0/0 to trust all — NOT recommended)
+    # are allowed to set X-Forwarded-For. Everything else falls back to the
+    # direct TCP peer address. Empty tuple = no proxy trusted.
+    trusted_proxies: tuple[str, ...] = Field(
+        default=(), description="Trusted proxy IPs for X-Forwarded-For handling."
+    )
+
+    # --- Background source -------------------------------------------------
+    twin_background: str | None = Field(
+        default=None, description="Full candidate background (CV) text."
+    )
+
+    # --- Logging ------------------------------------------------------------
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        default="INFO", description="Root log level (noisier = more verbose)."
+    )
+
+    # --- Callback credentials (lead capture). Optional: if unset the tools
+    #     fall back to logging only.
+    pushover_user: str | None = Field(default=None, description="Pushover user key.")
+    pushover_token: str | None = Field(default=None, description="Pushover app token.")
+
+    @field_validator("trusted_proxies", mode="before")
+    @classmethod
+    def _parse_proxies(cls, v: object) -> object:
+        """Allow a single comma-separated string or a list/tuple of IPs.
+
+        Env vars are always strings; this keeps ``TRUSTED_PROXIES=10.0.0.1,10.0.0.2``
+        usable without JSON-style quoting.
+        """
+        if isinstance(v, str) and v.strip():
+            return tuple(part.strip() for part in v.split(",") if part.strip())
+        return v
+
+
+# ---------------------------------------------------------------------------
+# Lightweight auto-validation of non-empty secret strings.
+# ---------------------------------------------------------------------------
+
+
+def _non_empty(v: str) -> str:
+    if not v.strip():
+        raise ValueError("value must not be empty")
+    return v
+
+
+NonEmptyStr = Annotated[str, AfterValidator(_non_empty)]
+
+
+# ---------------------------------------------------------------------------
+# Process bootstrap helpers.
+# ---------------------------------------------------------------------------
+
+
+def load_dotenv() -> None:
+    """Load the .env file at the project root if present.
+
+    Never overrides already-set environment variables; real deploy-time env
+    vars win over the checked-in example file.
+    """
+    from dotenv import load_dotenv as _dotenv_load
+
+    # The .env is resolved relative to the repository root (parent of the
+    # package directory), so this works regardless of the CWD.
+    root = Path(__file__).resolve().parent.parent
+    _dotenv_load(root / ".env", override=False)
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return a cached Settings instance (read env vars & the .env file once)."""
+    load_dotenv()
+    return Settings()
+
+
+# ---------------------------------------------------------------------------
+# SECRET_KEYS — single source of truth for the output scrubber.
+# Keep the names in sync with the Settings fields above.
+# ---------------------------------------------------------------------------
+SECRET_KEYS: frozenset[str] = frozenset(
+    {
+        "OPENAI_API_KEY",
+        "PUSHOVER_USER",
+        "PUSHOVER_TOKEN",
+        "TWIN_BACKGROUND",
+        "TWIN_SYSTEM_PROMPT",
+        "TWIN_BEHAVIOR",
+    }
+)

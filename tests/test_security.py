@@ -10,7 +10,7 @@ These tests are deterministic and require no env vars, API keys, or network.
 
 import pytest
 
-from security import (
+from digitaltwin.security import (
     _normalize,
     is_suspicious_request,
     scrub_output,

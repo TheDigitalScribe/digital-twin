@@ -10,9 +10,9 @@ import importlib
 
 import pytest
 
-import context
-import tools
-from tools import retrieve_background
+from digitaltwin import context
+from digitaltwin import tools
+from digitaltwin.tools import retrieve_background
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +71,10 @@ class TestSystemPromptMinimization:
         # The opening identity line is allowed (it forms the sketch).
         assert "You represent:" in prompt
 
+    def test_system_prompt_stays_compact(self):
+        # The prompt should be far smaller than the full background would be.
+        assert len(context.TWIN_SYSTEM_PROMPT) < 5000
+
     def test_sketch_only_in_identity_section(self):
         # Only the short sketch (<=400 chars) may appear in the prompt, while
         # the rest of the background text must never be embedded.
@@ -122,5 +126,6 @@ class TestRetrieveBackgroundTool:
 
 
 def test_module_import_idempotent():
-    """Re-importing context must not raise (importlib used above)."""
+    """Re-importing the package modules must not raise."""
     importlib.reload(context)
+    importlib.reload(tools)

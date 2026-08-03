@@ -1,0 +1,199 @@
+"""Request handling: validation, rate limiting, guardrails, and the chat loop.
+
+Everything a single user message goes through, in order:
+
+1. IP resolution (trusted-proxy aware)
+2. Rate limiting (TTL-bucketed, per client)
+3. Message validation (empty / too long)
+4. Layer A guardrail (input sandboxing)
+5. History trimming (bounded conversation -> cost + injection-surface control)
+6. Model call + tool loop
+7. Layer B guardrail (output scrubbing)
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .config import Settings, get_settings
+from .context import TWIN_SYSTEM_PROMPT
+from .llm import LLMError, LLMService
+from .logger import get_logger, log_security_event
+from .rate_limiter import RateLimiter, client_ip_from_request
+from .security import DECLINE_INPUT, is_suspicious_request, scrub_output
+
+logger = get_logger(__name__)
+
+_FALLBACK_ERROR_MESSAGE = (
+    "⚠️ Something went wrong while I was thinking. Please try again in a moment."
+)
+
+# Lazily-created default handler shared across requests (Gradio signature).
+_default_handler: "ChatHandler | None" = None
+
+
+class ChatHandler:
+    """Handles a single user message end-to-end.
+
+    Accepts an injected settings/limiter/service so tests can construct a
+    handler with a fake LLM client and arbitrary limits.
+    """
+
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        llm: LLMService | None = None,
+        rate_limiter: RateLimiter | None = None,
+    ) -> None:
+        self.settings = settings or get_settings()
+        self.llm = llm or LLMService(self.settings)
+        self.rate_limiter = rate_limiter or RateLimiter(self.settings)
+
+    # ------------------------------------------------------------------
+    # Public entry point (Gradio signature)
+    # ------------------------------------------------------------------
+
+    async def handle_message(
+        self,
+        message: str,
+        history: list[Any] | None,
+        request: object | None = None,
+    ) -> str:
+        """Process one user message and return the assistant's reply string."""
+        # 1) Client IP (honors trusted proxies only).
+        ip = client_ip_from_request(
+            request, trusted_proxies=self.settings.trusted_proxies
+        )
+
+        # 2) Rate limiting.
+        if self.rate_limiter.is_limited(ip):
+            log_security_event(
+                logger, "rate_limited", ip=ip,
+                reason="exceeded_per_window_limit",
+            )
+            return "⚠️ You're sending messages too quickly. Please wait a minute before asking another question."
+
+        # 3) Validation.
+        message_text = (message or "").strip()
+        if not message_text:
+            return "Please enter a valid question."
+        if len(message_text) > self.settings.max_message_chars:
+            return (
+                "⚠️ Your message is too long "
+                f"(maximum {self.settings.max_message_chars} characters)."
+            )
+
+        # 4) Layer A: input sandboxing.
+        if is_suspicious_request(message_text):
+            log_security_event(
+                logger, "input_blocked", ip=ip, reason="suspicious_request"
+            )
+            return DECLINE_INPUT
+
+        # 5) Build a bounded message list.
+        messages = self._build_messages(history or [], message_text)
+
+        # 6) Model call (+ tool loop) with graceful degradation.
+        try:
+            reply = await self.llm.run_chat(messages)
+        except LLMError as exc:
+            logger.error("LLM call failed for ip=%s: %s", ip, exc)
+            return _FALLBACK_ERROR_MESSAGE
+        except Exception as exc:  # noqa: BLE001 - never leak internals to users
+            logger.exception("Unexpected error handling message for ip=%s", ip)
+            return _FALLBACK_ERROR_MESSAGE
+
+        # 7) Layer B: output scrubbing.
+        return scrub_output(reply)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _build_messages(
+        self, history: list[Any], user_text: str
+    ) -> list[dict[str, Any]]:
+        """Assemble the OpenAI message list from Gradio history.
+
+        ``history`` is a list of [user_msg, assistant_msg] turn pairs. We keep
+        only the most recent ``max_history_turns`` turns to bound both cost
+        and the injection surface (older assistant turns are the ideal place
+        to hide prompt-injection artifacts).
+
+        History entries are normalized to plain strings: Gradio 6 may pass
+        plain strings, dicts (``{"role", "content", ...}``), or ChatMessage
+        objects with a ``.content`` attribute. Passing those raw as
+        ``messages[].content`` makes the OpenAI API reject the request with a
+        400 ("expected a string or array of objects").
+        """
+        turns = history[-self.settings.max_history_turns :] if self.settings.max_history_turns else []
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": TWIN_SYSTEM_PROMPT}
+        ]
+        for turn in turns:
+            user_part = turn[0] if isinstance(turn, (list, tuple)) else turn
+            assistant_part = (
+                turn[1]
+                if isinstance(turn, (list, tuple)) and len(turn) > 1
+                else ""
+            )
+            user_text_from_history = self._extract_message_text(user_part)
+            if user_text_from_history:
+                messages.append(
+                    {"role": "user", "content": user_text_from_history}
+                )
+            assistant_text = self._extract_message_text(assistant_part)
+            if assistant_text:
+                messages.append(
+                    {"role": "assistant", "content": assistant_text}
+                )
+        messages.append({"role": "user", "content": user_text})
+        return messages
+
+    @staticmethod
+    def _extract_message_text(entry: Any) -> str:
+        """Extract plain text from a Gradio history message entry.
+
+        Handles plain strings, dicts (``{"content": ...}`` / ``{"text": ...}``),
+        and objects with a ``content``/``text`` attribute (e.g. Gradio's
+        ChatMessage). The content may itself be a list of parts
+        (``[{"type": "text", "text": "..."}]``), which is flattened.
+        """
+        if entry is None:
+            return ""
+        if isinstance(entry, str):
+            return entry
+
+        # list-of-parts form: [{"type": "text", "text": "..."}, ...]
+        if isinstance(entry, (list, tuple)):
+            parts = [
+                ChatHandler._extract_message_text(item) for item in entry
+            ]
+            return " ".join(part for part in parts if part)
+
+        # dict form
+        if isinstance(entry, dict):
+            content = entry.get("content") or entry.get("text")
+            return ChatHandler._extract_message_text(content)
+
+        # object form (gr.ChatMessage, SimpleNamespace, etc.)
+        content = getattr(entry, "content", None) or getattr(entry, "text", None)
+        if content is None:
+            return ""
+        return ChatHandler._extract_message_text(content)
+
+
+async def handle_message(
+    message: str,
+    history: list[Any] | None,
+    request: object | None = None,
+) -> str:
+    """Module-level Gradio-compatible async entry point.
+
+    Uses a lazily-created default ``ChatHandler`` shared across requests so
+    the LLM client / rate limiter are constructed only once per process.
+    """
+    global _default_handler
+    if _default_handler is None:
+        _default_handler = ChatHandler()
+    return await _default_handler.handle_message(message, history, request)

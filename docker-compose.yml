@@ -1,0 +1,16 @@
+# ---------------------------------------------------------------------------
+# Digital Twin — local deployment
+# Usage: docker compose up --build
+# Secrets come from a local .env file (never committed).
+# ---------------------------------------------------------------------------
+
+services:
+  digital-twin:
+    build: .
+    image: digital-twin:latest
+    container_name: digital-twin
+    ports:
+      - '7860:7860'
+    env_file:
+      - .env
+    restart: unless-stopped

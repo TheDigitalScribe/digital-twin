@@ -1,20 +1,21 @@
+"""Defense-in-depth guardrail layer.
+
+Three independent layers protect the twin:
+
+1. ``_normalize``          — deobfuscation helper that flattens evasions
+   (homoglyphs, zero-width chars, letter-spacing, fragment-fusion).
+2. ``is_suspicious_request`` — Layer A: input sandboxing (pre-model).
+3. ``scrub_output``        — Layer B: output scrubbing (post-model).
+
+Heuristic and best-effort by design: these layers complement (never replace)
+the non-overridable system prompt protocols in ``context``.
+"""
+
+from __future__ import annotations
+
 import re
-import os
 
-
-# ---------------------------------------------------------------------------
-# Sensitive patterns we must never expose (single-source of truth).
-# Kept intentionally broad so that even paraphrased leaks get caught; we
-# prefer false-positives (recuse) over false-negatives (leak).
-# ---------------------------------------------------------------------------
-SECRET_KEYS = {
-    "OPENAI_API_KEY",
-    "PUSHOVER_USER",
-    "PUSHOVER_TOKEN",
-    "TWIN_BACKGROUND",
-    "TWIN_SYSTEM_PROMPT",
-    "TWIN_BEHAVIOR",
-}
+from .config import SECRET_KEYS
 
 # Phrases / markers that signal an attempt to extract instructions.
 EXTRACTION_PATTERNS = [
@@ -36,7 +37,7 @@ EXTRACTION_PATTERNS = [
     r"ignore\s+(?:all\s+)?previous",
     r"pretend\s*you\s*are\s*(unconstrained|unleashed|not\s*an\s*ai|db)",
     r"act\s*as\s*(if|though)?\s*(you\s*have\s*no|without)\s*(rules|restrictions|limits)",
-    # Strengthened: paraphrased / masked extraction attempts.
+    # Paraphrased / masked extraction attempts.
     r"reveal\s+(your|the)\s+(prompt|instructions|rules)",
     r"show\s+(me\s+)?(your|the)\s+(prompt|instructions|rules)",
     r"expose\s+(your|the)\s+(prompt|instructions)",
@@ -70,12 +71,6 @@ _STOP_WORDS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Deobfuscation helper.
-# Normalizes text so that homoglyph / spacing / character-insertion evasions
-# are caught by the regexes above. This is the single point where common
-# token-level obfuscation tricks are flattened.
-# ---------------------------------------------------------------------------
 def _normalize(text: str) -> str:
     """Flatten common obfuscations used to dodge keyword scanners:
     - full-width / lookalike unicode letters -> ASCII equivalents
@@ -83,7 +78,8 @@ def _normalize(text: str) -> str:
     - runs of whitespace collapse to a single space
     - letter-spaced words collapse ("r e p e a t" -> "repeat")
     - short non-word fragments fuse back together ("sys tem" -> "system")
-    Returns the normalized text. Never raises."""
+    Returns the normalized text. Never raises.
+    """
     if not text:
         return text
     # Full-width / common homoglyph map for latin letters + digits.
@@ -216,7 +212,6 @@ def scrub_output(content: str) -> str:
         return content
     threat = _output_leak_detected(content)
     if threat:
-        print(f"[Security] Output blocked: matched '{threat}'")
         return DECLINE_OUTPUT
     return content
 

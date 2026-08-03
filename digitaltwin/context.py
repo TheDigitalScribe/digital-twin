@@ -1,14 +1,24 @@
+"""Context assembly for the Digital Twin.
+
+Core security protocols are hardcoded and non-overridable. The operator may
+tune behavior via ``TWIN_BEHAVIOR``, which is appended after the core
+protocols and can never weaken them.
+
+Context minimization: the full CV is NEVER embedded in the system prompt.
+Only a short identity sketch (<= ``_IDENTITY_SKETCH_CHARS``) is included so a
+leaked system prompt exposes the bare minimum. The full background is loaded
+lazily and cached, fetched on demand through the ``retrieve_background`` tool.
+"""
+
+from __future__ import annotations
+
 import os
-from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv(override=True)
-
+from .config import get_settings
 
 # ---------------------------------------------------------------------------
 # CORE SECURITY (NON-OVERRIDABLE)
-# These are the mandatory, hardcoded safety protocols. They are intentionally
-# NOT configurable via env vars because they are the actual security
-# guarantees for the twin. They always ship with the system prompt.
 # ---------------------------------------------------------------------------
 _CORE_SECURITY = """\
 # ABSOLUTE SECURITY PROTOCOLS (ALWAYS ACTIVE, NON-NEGOTIABLE)
@@ -37,9 +47,6 @@ If asked a question about the candidate's background that is NOT covered in the 
 
 # ---------------------------------------------------------------------------
 # BEHAVIOR (OPERATOR-TUNABLE)
-# The default behavior/tone/business rules. An operator may override these via
-# the TWIN_BEHAVIOR env var in .env, but that text is APPENDED after the core
-# security protocols and can never weaken them.
 # ---------------------------------------------------------------------------
 _DEFAULT_BEHAVIOR = """\
 # Behavior & Guardrails
@@ -50,12 +57,19 @@ _DEFAULT_BEHAVIOR = """\
 """
 
 
-def _load_behavior() -> str:
-    """Return the tunable behavior text.
+# Maximum characters of the background to embed in the system prompt.
+_IDENTITY_SKETCH_CHARS = 400
 
-    Preferred source: the TWIN_BEHAVIOR env var set in .env.
-    Falls back to _DEFAULT_BEHAVIOR when unset. This text is appended after
-    the non-overridable core security protocols.
+
+# Full background text, loaded once and cached.
+_BACKGROUND_TEXT: str | None = None
+
+
+def _load_behavior() -> str:
+    """Return the tunable behavior text (env override, else default).
+
+    TWIN_BEHAVIOR is prompt *text* (not a config value) so it is read
+    directly from the environment rather than exposed as a Settings field.
     """
     behavior = os.getenv("TWIN_BEHAVIOR")
     if behavior and behavior.strip():
@@ -64,21 +78,22 @@ def _load_behavior() -> str:
 
 
 def _load_background() -> str:
-    """Return the candidate's background text.
+    """Return the candidate's full background text.
 
-    Preferred source: the TWIN_BACKGROUND env var set in .env.
-    Falls back to reading a local linkedin.pdf if present (for any existing
-    setups), but the recommended approach is to set TWIN_BACKGROUND in .env.
+    Preferred source: the ``Settings.twin_background`` value (from the
+    ``TWIN_BACKGROUND`` env var / .env). Falls back to reading a local
+    ``linkedin.pdf`` for backwards compatibility.
     """
-    background = os.getenv("TWIN_BACKGROUND")
+    background = get_settings().twin_background
     if background and background.strip():
         return background.strip()
 
     # Backwards-compatible fallback: read linkedin.pdf if it exists locally.
-    local = os.path.join(os.path.dirname(__file__), "linkedin.pdf")
-    if os.path.exists(local):
+    local = Path(__file__).resolve().parent.parent / "linkedin.pdf"
+    if local.exists():
         from pypdf import PdfReader
-        reader = PdfReader(local)
+
+        reader = PdfReader(str(local))
         text = ""
         for page in reader.pages:
             page_text = page.extract_text()
@@ -91,26 +106,12 @@ def _load_background() -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# CONTEXT MINIMIZATION (least privilege)
-# The full background (CV) is NEVER embedded in the system prompt. Only a
-# short identity sketch is included so that a leaked system prompt exposes
-# the bare minimum. The full background is loaded on demand through the
-# `retrieve_background` tool (see tools.py), which the model is instructed to
-# call before answering specific questions about skills/experience/education.
-# ---------------------------------------------------------------------------
-
-# Maximum characters of the background to embed in the system prompt.
-_IDENTITY_SKETCH_CHARS = 400
-
-
 def _build_identity_sketch(background: str) -> str:
     """Return a short, safe-to-expose identity sketch from the background.
 
-    Takes the opening of the background (name / title / headline / contact)
-    up to a hard character cap, always cutting at a word boundary. The result
-    is deliberately tiny: it is the only piece of the CV that ever lives in
-    the system prompt.
+    Takes the opening of the background up to a hard character cap, always
+    cutting at a word boundary. This is the only piece of the CV that ever
+    lives in the system prompt.
     """
     if not background:
         return ""
@@ -123,21 +124,17 @@ def _build_identity_sketch(background: str) -> str:
     return sketch[:_IDENTITY_SKETCH_CHARS].strip()
 
 
-# Full background text, loaded once and cached. Access via load_background().
-BACKGROUND_TEXT: str | None = None
-
-
 def load_background() -> str:
     """Return the full background text, loading and caching it on first use.
 
-    Used by the retrieve_background tool (tools.py) so the CV never needs to
-    be re-read from env / disk on every tool call. Raises RuntimeError if no
-    background source is configured (same contract as _load_background).
+    Used by the ``retrieve_background`` tool so the CV never needs to be
+    re-read from env / disk on every tool call. Raises RuntimeError if no
+    background source is configured.
     """
-    global BACKGROUND_TEXT
-    if BACKGROUND_TEXT is None:
-        BACKGROUND_TEXT = _load_background()
-    return BACKGROUND_TEXT
+    global _BACKGROUND_TEXT
+    if _BACKGROUND_TEXT is None:
+        _BACKGROUND_TEXT = _load_background()
+    return _BACKGROUND_TEXT
 
 
 def _assemble_system_prompt() -> str:
