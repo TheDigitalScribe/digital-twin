@@ -1,0 +1,8 @@
+requests
+gradio
+pypdf
+openai
+python-dotenv
+httpx
+pydantic[email]
+pytest
