@@ -1,26 +1,5 @@
 # Security Policy
 
-## Reporting a vulnerability
-
-Please **do not open a public issue** for security problems. Instead, report
-privately by emailing the maintainer (see the project's author email in
-`pyproject.toml`).
-
-Include, where possible:
-
-- The affected version / commit.
-- A minimal reproduction (input message, expected vs actual behavior).
-- Impact assessment (what an attacker could do).
-
-You should receive an acknowledgement within **72 hours**, and a fix plan
-within one week. We'll coordinate a release and credit you (if you wish) once
-the fix is public.
-
-## Supported versions
-
-Only the latest release on `main` is supported. Older tags are not
-security-patched.
-
 ## Security model & known limitations
 
 This app treats the LLM as an **untrusted component** and layers
