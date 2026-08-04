@@ -6,13 +6,13 @@ from types import SimpleNamespace
 import pytest
 
 from digitaltwin.tools import (
+    TOOL_MAP,
     _dispatch_tool,
     handle_tool_calls_async,
     record_unknown_question,
     record_user_details,
     retrieve_background,
     tools,
-    TOOL_MAP,
 )
 
 

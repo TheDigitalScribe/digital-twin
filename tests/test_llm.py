@@ -7,7 +7,6 @@ import pytest
 
 from digitaltwin.config import Settings
 from digitaltwin.llm import LLMError, LLMService
-
 from digitaltwin.tools import tools
 
 
@@ -157,3 +156,24 @@ class TestRunChat:
         await service.run_chat([{"role": "user", "content": "hi"}], retries=0)
         assert seen["tools"] == tools
         assert seen["model"] == "gpt-5.4-mini"
+        assert seen["max_completion_tokens"] == 1024
+        assert "max_tokens" not in seen
+
+    @pytest.mark.anyio
+    async def test_max_tokens_param_respects_setting(self):
+        """Legacy models expecting `max_tokens` get that parameter instead."""
+        seen = {}
+
+        class CapturingClient:
+            def __init__(self):
+                self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+            async def _create(self, **kwargs):
+                seen.update(kwargs)
+                return FakeCompletion(FakeChoice("stop", content="ok"))
+
+        settings = Settings(max_tokens_param="max_tokens", max_output_tokens=512)
+        service = LLMService(settings=settings, client=CapturingClient())
+        await service.run_chat([{"role": "user", "content": "hi"}], retries=0)
+        assert seen["max_tokens"] == 512
+        assert "max_completion_tokens" not in seen

@@ -10,10 +10,8 @@ import importlib
 
 import pytest
 
-from digitaltwin import context
-from digitaltwin import tools
+from digitaltwin import context, tools
 from digitaltwin.tools import retrieve_background
-
 
 # ---------------------------------------------------------------------------
 # Identity sketch

@@ -7,7 +7,6 @@ dev). Single source of truth for tunables so that no module reads
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -44,6 +43,29 @@ class Settings(BaseSettings):
     max_history_turns: int = Field(
         default=10, ge=0, description="Max prior conversation turns sent to the model."
     )
+    max_output_tokens: int = Field(
+        default=1024,
+        ge=1,
+        description="Maximum tokens the model may generate per response (cost/latency bound).",
+    )
+    max_tokens_param: Literal["max_tokens", "max_completion_tokens"] = Field(
+        default="max_completion_tokens",
+        description=(
+            "API parameter used to send the per-response token cap. Newer OpenAI "
+            "models (e.g. gpt-5.x, o-series) require 'max_completion_tokens'; "
+            "older chat models (gpt-3.5/4) require 'max_tokens'."
+        ),
+    )
+    max_background_chars: int = Field(
+        default=25000,
+        ge=1,
+        description="Maximum characters of the background (CV) returned by retrieve_background.",
+    )
+    llm_timeout_seconds: float = Field(
+        default=60.0,
+        ge=1.0,
+        description="Per-attempt timeout (seconds) for a single chat-completions call.",
+    )
 
     # --- Rate limiting (per client IP) ------------------------------------
     rate_limit_requests: int = Field(
@@ -51,6 +73,14 @@ class Settings(BaseSettings):
     )
     rate_limit_window_seconds: int = Field(
         default=60, ge=1, description="Rate-limit window length in seconds."
+    )
+
+    # --- Web-origin restriction (CORS) -------------------------------------
+    # Comma-separated list of allowed browser origins. Empty = any origin
+    # (Gradio's default). Set this when embedding on a known domain.
+    allowed_origins: tuple[str, ...] = Field(
+        default=(),
+        description="Comma-separated allowed browser origins for CORS.",
     )
 
     # --- Trusted proxies ---------------------------------------------------
@@ -65,6 +95,13 @@ class Settings(BaseSettings):
     twin_background: str | None = Field(
         default=None, description="Full candidate background (CV) text."
     )
+    twin_behavior: str | None = Field(
+        default=None,
+        description=(
+            "Operator-tunable behavior text appended AFTER the core (non-overridable) "
+            "security protocols. Can never weaken the core protocols."
+        ),
+    )
 
     # --- Logging ------------------------------------------------------------
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
@@ -76,6 +113,15 @@ class Settings(BaseSettings):
     pushover_user: str | None = Field(default=None, description="Pushover user key.")
     pushover_token: str | None = Field(default=None, description="Pushover app token.")
 
+    # --- Lead persistence ---------------------------------------------------
+    # SQLite file path for durable lead/unknown-question storage. When unset,
+    # leads are only logged/pushed (best-effort). Path is resolved relative to
+    # the repository root.
+    leads_db_path: str | None = Field(
+        default="data/leads.db",
+        description="SQLite database path for lead capture persistence.",
+    )
+
     @field_validator("trusted_proxies", mode="before")
     @classmethod
     def _parse_proxies(cls, v: object) -> object:
@@ -84,6 +130,14 @@ class Settings(BaseSettings):
         Env vars are always strings; this keeps ``TRUSTED_PROXIES=10.0.0.1,10.0.0.2``
         usable without JSON-style quoting.
         """
+        if isinstance(v, str) and v.strip():
+            return tuple(part.strip() for part in v.split(",") if part.strip())
+        return v
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, v: object) -> object:
+        """Allow a single comma-separated list of origins."""
         if isinstance(v, str) and v.strip():
             return tuple(part.strip() for part in v.split(",") if part.strip())
         return v

@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "digital-twin"
-version = "0.2.0"
+version = "0.3.0"
 description = "An AI digital twin that represents the candidate's career with defense-in-depth prompt-injection guardrails."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,6 +25,9 @@ dependencies = [
 
     # Web UI
     "gradio==6.22.0",
+
+    # ASGI server (production entry point)
+    "uvicorn==0.52.1",
 
     # HTTP (Pushover notifications)
     "httpx==0.28.1",
@@ -59,3 +62,6 @@ target-version = "py311"
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
+# Do not descend into installed third-party packages (e.g. numpy stubs pulled
+# in by gradio/openai may require a newer Python than our 3.11 minimum).
+follow_imports = "skip"

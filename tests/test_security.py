@@ -11,14 +11,12 @@ These tests are deterministic and require no env vars, API keys, or network.
 import pytest
 
 from digitaltwin.security import (
+    DECLINE_OUTPUT,
     _normalize,
+    _output_leak_detected,
     is_suspicious_request,
     scrub_output,
-    _output_leak_detected,
-    DECLINE_INPUT,
-    DECLINE_OUTPUT,
 )
-
 
 # ---------------------------------------------------------------------------
 # _normalize() - deobfuscation helper

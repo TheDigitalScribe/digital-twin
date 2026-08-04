@@ -1,0 +1,30 @@
+# Build context for Docker — keep secrets and local junk out of the image.
+.env
+.env.*
+
+.venv
+venv/
+__pycache__/
+*.py[codz]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local data must never ship in the image (leads DB, CVs, etc.).
+data/
+linkedin.pdf
+
+tests/
+.github/
+.git/
+.gitignore
+.dockerignore
+
+# Editor/OS cruft.
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db

@@ -7,6 +7,7 @@ extra fields, or wrong types — we never trust the model blindly).
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -14,11 +15,40 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import get_settings
-from .logger import get_logger
+from .logger import get_logger, log_security_event
+from .observability import Metrics
+from .persistence import persist_lead, persist_unknown_question
 
 logger = get_logger(__name__)
 
 PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
+
+# Shared HTTP client for outbound notifications (connection pooling).
+_http_client: httpx.AsyncClient | None = None
+_http_client_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Return a lazily-created httpx.AsyncClient bound to the current loop.
+
+    In production there is exactly one event loop, so a single process-wide
+    client is reused (connection pooling). Test frameworks (anyio) create a
+    fresh loop per test; reusing a client whose keep-alive connections are
+    bound to a closed loop raises "Event loop is closed". We therefore key
+    the cache by the running loop and build a new client when it changes.
+    """
+    global _http_client, _http_client_loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if _http_client is None or (loop is not None and _http_client_loop is not loop):
+        _http_client = httpx.AsyncClient(
+            timeout=5.0,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+        _http_client_loop = loop
+    return _http_client
 
 
 # ---------------------------------------------------------
@@ -48,7 +78,6 @@ class RecordUnknownQuestion(BaseModel):
 
 class RetrieveBackground(BaseModel):
     """No arguments required."""
-    pass
 
 
 # ---------------------------------------------------------
@@ -98,6 +127,7 @@ async def push_async(text: str) -> None:
     """Non-blocking HTTP call to Pushover (best-effort, never raises).
 
     Falls back to logging when credentials are absent or the call fails.
+    Uses the shared connection-pooled client.
     """
     settings = get_settings()
     user = settings.pushover_user
@@ -107,39 +137,47 @@ async def push_async(text: str) -> None:
         return
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                PUSHOVER_URL,
-                data={"token": token, "user": user, "message": text},
-                timeout=5.0,
-            )
-            resp.raise_for_status()
-    except (httpx.HTTPError, OSError) as exc:
+        client = _get_http_client()
+        resp = await client.post(
+            PUSHOVER_URL,
+            data={"token": token, "user": user, "message": text},
+        )
+        resp.raise_for_status()
+    except Exception as exc:  # noqa: BLE001 - best-effort, never raises
         logger.error("Failed to send push notification: %s", exc)
 
 
 async def record_user_details(
     email: str, name: str = "Name not provided", notes: str = "Not provided"
 ) -> str:
+    """Persist the lead durably, then best-effort push a notification."""
+    Metrics.leads_recorded.inc()
+    persist_lead(email, name, notes)
     await push_async(f"Recording interest from {name} ({email}). Notes: {notes}")
     return "OK"
 
 
 async def record_unknown_question(question: str) -> str:
+    """Persist the unanswered question durably, then best-effort push."""
+    Metrics.unmatched_questions.inc()
+    persist_unknown_question(question)
     await push_async(f"Unknown question asked: {question}")
     return "OK"
 
 
 async def retrieve_background() -> str:
-    """Return the full background text (CV).
+    """Return the background text (CV), bounded to ``max_background_chars``.
 
     Loads lazily and caches the background on first use so the env var / file
     is only read once per process. The returned text is deliberately NOT part
     of the system prompt (context minimization); it is fetched on demand.
+
+    The returned text is capped at ``settings.max_background_chars`` characters
+    so a single tool call cannot blow up the context window / cost.
     """
     from .context import load_background
 
-    return load_background()
+    return load_background()[: get_settings().max_background_chars]
 
 
 TOOL_MAP: dict[str, Any] = {
@@ -188,26 +226,35 @@ async def _dispatch_tool(tool_name: str, args_text: str) -> str:
     the OpenAI tool-message format. Error conditions are returned as
     descriptive strings so the model can see exactly what went wrong.
     """
+    Metrics.tool_calls.inc()
     try:
         arguments = json.loads(args_text or "{}")
     except json.JSONDecodeError as exc:
+        Metrics.tool_errors.inc()
         logger.error("Tool %s sent malformed JSON args: %s", tool_name, exc)
         return f"Error: malformed JSON arguments: {exc}"
 
     if not isinstance(arguments, dict):
+        Metrics.tool_errors.inc()
         return "Error: tool arguments must be a JSON object."
 
     schema = _TOOL_SCHEMAS.get(tool_name)
     if schema is None:
-        logger.warning("Unknown tool requested: %s", tool_name)
+        log_security_event(logger, "unknown_tool_requested", tool=tool_name)
         return f"Error: unknown tool: {tool_name}"
 
     try:
         validated = schema.model_validate(arguments)
     except ValidationError as exc:
+        Metrics.tool_errors.inc()
         logger.warning("Tool %s received invalid arguments: %s", tool_name, exc)
         return f"Error: invalid arguments: {exc}"
 
     func = TOOL_MAP[tool_name]
-    result = await func(**validated.model_dump())
+    try:
+        result = await func(**validated.model_dump())
+    except Exception as exc:
+        Metrics.tool_errors.inc()
+        logger.exception("Tool %s raised during execution", tool_name)
+        return f"Error: tool execution failed: {exc}"
     return result if isinstance(result, str) else json.dumps(result)

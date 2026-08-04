@@ -6,4 +6,4 @@ context-minimization architecture that never embeds the full CV in the
 system prompt.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

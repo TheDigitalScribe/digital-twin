@@ -1,0 +1,20 @@
+# Dependency update automation.
+# - pip: bumps pinned runtime + dev dependencies (weekly).
+# - github-actions: keeps workflow actions current (weekly).
+
+version: 2
+updates:
+  - package-ecosystem: 'pip'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
+    groups:
+      runtime-deps:
+        patterns: ['*']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 3

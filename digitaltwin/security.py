@@ -21,6 +21,7 @@ from .config import SECRET_KEYS
 EXTRACTION_PATTERNS = [
     r"system\s*prompt",
     r"initial\s*instructions",
+    r"summarize\s+.*\b(everything|prompt|instructions|rules|system prompt|settings|guidelines)\b",
     r"repeat\s*(everything|all|the|your)",
     r"what\s*(are|were|weren't)?\s*(your|the)\s*(instructions|rules|system|prompt|settings)",
     r"summarize\s*(everything|all|the|this)",
@@ -135,7 +136,9 @@ def _normalize(text: str) -> str:
             combined = words[i]
             gap_before = None if i == 0 else single_gaps[i - 1]
         if fused:
-            fused_gaps.append(gap_before)
+            # fused is non-empty only once we are past the first word, so
+            # gap_before is guaranteed to be set here.
+            fused_gaps.append(gap_before if gap_before is not None else False)
         fused.append(combined)
         i += 1
 
@@ -194,10 +197,7 @@ def is_suspicious_request(message: str) -> bool:
 
     # Case 3: bundled responsibility-shift pattern ("you are now ..." plus a
     # role) even if markers individually look innocuous.
-    if re.search(r'("|“)?you\s+are\s+(now|not\s+any|no\s+longer)', low):
-        return True
-
-    return False
+    return bool(re.search(r'("|“)?you\s+are\s+(now|not\s+any|no\s+longer)', low))
 
 
 # ---------------------------------------------------------------------------
@@ -258,11 +258,13 @@ def _output_leak_detected(content: str) -> str | None:
         return "api-key-like-token"
 
     # 5) Tool names leaking (internal interface disclosure).
-    if "handle_tool_calls_async" in content or "record_unknown_question" in content:
-        # record_unknown_question is legitimately mentioned in the fallback
-        # rule, but if the raw function name / signature leaks we treat it as
-        # internal disclosure only when paired with config-ish phrasing.
-        if "record_unknown_question" in low and "function" in low:
-            return "internal-tool-disclosure"
+    # record_unknown_question is legitimately mentioned in the fallback rule,
+    # but if the raw function name / signature leaks we treat it as internal
+    # disclosure only when paired with config-ish phrasing.
+    if ("handle_tool_calls_async" in content or "record_unknown_question" in content) and (
+        "record_unknown_question" in low and "function" in low
+    ):
+        return "internal-tool-disclosure"
 
     return None
+

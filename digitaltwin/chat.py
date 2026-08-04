@@ -2,23 +2,31 @@
 
 Everything a single user message goes through, in order:
 
-1. IP resolution (trusted-proxy aware)
-2. Rate limiting (TTL-bucketed, per client)
-3. Message validation (empty / too long)
-4. Layer A guardrail (input sandboxing)
-5. History trimming (bounded conversation -> cost + injection-surface control)
-6. Model call + tool loop
-7. Layer B guardrail (output scrubbing)
+1. Request-ID generation (trace correlation)
+2. IP resolution (trusted-proxy aware)
+3. Rate limiting (TTL-bucketed, per client)
+4. Message validation (empty / too long)
+5. Layer A guardrail (input sandboxing) — on the new message *and* history
+6. History trimming (bounded conversation -> cost + injection-surface control)
+7. Model call + tool loop
+8. Layer B guardrail (output scrubbing)
 """
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from .config import Settings, get_settings
 from .context import TWIN_SYSTEM_PROMPT
 from .llm import LLMError, LLMService
-from .logger import get_logger, log_security_event
+from .observability import (
+    Metrics,
+    get_logger,
+    log_security_event,
+    new_request_id,
+    request_id,
+)
 from .rate_limiter import RateLimiter, client_ip_from_request
 from .security import DECLINE_INPUT, is_suspicious_request, scrub_output
 
@@ -29,7 +37,10 @@ _FALLBACK_ERROR_MESSAGE = (
 )
 
 # Lazily-created default handler shared across requests (Gradio signature).
-_default_handler: "ChatHandler | None" = None
+# Guarded by a lock so concurrent first requests cannot create two handlers
+# (which would each own a distinct LLM client / rate-limiter state).
+_default_handler: ChatHandler | None = None
+_default_handler_lock = threading.Lock()
 
 
 class ChatHandler:
@@ -60,13 +71,31 @@ class ChatHandler:
         request: object | None = None,
     ) -> str:
         """Process one user message and return the assistant's reply string."""
+        # 0) Trace correlation — every log/metric emitted below carries this id.
+        rid = new_request_id()
+        token = request_id.set(rid)
+        Metrics.inflight_requests.inc()
+        try:
+            return await self._handle_message_inner(message, history, request)
+        finally:
+            Metrics.inflight_requests.dec()
+            request_id.reset(token)
+
+    async def _handle_message_inner(
+        self,
+        message: str,
+        history: list[Any] | None,
+        request: object | None,
+    ) -> str:
         # 1) Client IP (honors trusted proxies only).
         ip = client_ip_from_request(
             request, trusted_proxies=self.settings.trusted_proxies
         )
+        Metrics.messages_received.inc()
 
         # 2) Rate limiting.
         if self.rate_limiter.is_limited(ip):
+            Metrics.rate_limited.inc()
             log_security_event(
                 logger, "rate_limited", ip=ip,
                 reason="exceeded_per_window_limit",
@@ -83,28 +112,51 @@ class ChatHandler:
                 f"(maximum {self.settings.max_message_chars} characters)."
             )
 
-        # 4) Layer A: input sandboxing.
+        # 4) Layer A: input sandboxing on the new message.
         if is_suspicious_request(message_text):
+            Metrics.input_blocked.inc()
             log_security_event(
                 logger, "input_blocked", ip=ip, reason="suspicious_request"
             )
             return DECLINE_INPUT
 
-        # 5) Build a bounded message list.
+        # 5) Layer A also applies to the bounded history we are about to send:
+        #    an injected payload can arrive via an older turn. Bounding helps,
+        #    but detection is better — scan the turns that will reach the model.
+        history_turns = history or []
+        if self.settings.max_history_turns > 0:
+            history_turns = history_turns[-self.settings.max_history_turns :]
+        for turn in history_turns:
+            user_part = turn[0] if isinstance(turn, (list, tuple)) else turn
+            user_text = self._extract_message_text(user_part)
+            if user_text and is_suspicious_request(user_text):
+                Metrics.input_blocked.inc()
+                log_security_event(
+                    logger,
+                    "input_blocked",
+                    ip=ip,
+                    reason="suspicious_history_turn",
+                )
+                return DECLINE_INPUT
+
+        # 6) Build a bounded message list.
         messages = self._build_messages(history or [], message_text)
 
-        # 6) Model call (+ tool loop) with graceful degradation.
+        # 7) Model call (+ tool loop) with graceful degradation.
         try:
             reply = await self.llm.run_chat(messages)
         except LLMError as exc:
             logger.error("LLM call failed for ip=%s: %s", ip, exc)
             return _FALLBACK_ERROR_MESSAGE
-        except Exception as exc:  # noqa: BLE001 - never leak internals to users
+        except Exception:
             logger.exception("Unexpected error handling message for ip=%s", ip)
             return _FALLBACK_ERROR_MESSAGE
 
-        # 7) Layer B: output scrubbing.
-        return scrub_output(reply)
+        # 8) Layer B: output scrubbing.
+        scrubbed = scrub_output(reply)
+        if scrubbed != reply:
+            Metrics.output_scrubbed.inc()
+        return scrubbed
 
     # ------------------------------------------------------------------
     # Helpers
@@ -192,8 +244,12 @@ async def handle_message(
 
     Uses a lazily-created default ``ChatHandler`` shared across requests so
     the LLM client / rate limiter are constructed only once per process.
+    Construction is guarded by a lock: two concurrent first requests would
+    otherwise each build their own handler.
     """
     global _default_handler
     if _default_handler is None:
-        _default_handler = ChatHandler()
+        with _default_handler_lock:
+            if _default_handler is None:
+                _default_handler = ChatHandler()
     return await _default_handler.handle_message(message, history, request)

@@ -8,14 +8,14 @@ client.
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from .config import Settings, get_settings
+from .observability import Metrics, get_logger, record_llm_usage
 from .tools import handle_tool_calls_async, tools
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Upper bound on how many tool-call rounds we allow per user message. The
 # model could theoretically loop forever on its own tool calls; this keeps a
@@ -62,7 +62,7 @@ class LLMService:
         Raises LLMError if the API is unreachable after ``retries`` attempts,
         or if the tool-call loop exceeds ``max_tool_rounds``.
         """
-        response = await self._create_with_retry(messages, retries=retries)
+        response, used_retries = await self._create_with_retry(messages, retries=retries)
 
         for _ in range(self.max_tool_rounds):
             if response.choices[0].finish_reason != "tool_calls":
@@ -74,11 +74,13 @@ class LLMService:
             results = await handle_tool_calls_async(tool_calls)
             messages.append(msg)
             messages.extend(results)
-            response = await self._create_with_retry(messages, retries=retries)
+            response, used_retries = await self._create_with_retry(messages, retries=retries)
         else:
             raise LLMError(
                 f"Model exceeded max tool-call rounds ({self.max_tool_rounds})."
             )
+
+        self._record_usage(response, used_retries)
 
         content = response.choices[0].message.content
         return content if content is not None else ""
@@ -87,25 +89,35 @@ class LLMService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _create_with_retry(self, messages: list[dict[str, Any]], retries: int = 3) -> Any:
+    async def _create_with_retry(
+        self, messages: list[dict[str, Any]], retries: int = 3
+    ) -> tuple[Any, int]:
         """Call chat.completions.create with exponential backoff on failure.
 
-        Retries on network errors, 5xx, and 429 (rate-limit), respecting any
-        ``Retry-After`` header the API returns. Non-retryable 4xx errors
-        (e.g. invalid auth) raise immediately.
+        Returns ``(response, attempts_used)``. Retries on network errors, 5xx,
+        and 429 (rate-limit), respecting any ``Retry-After`` header the API
+        returns. Non-retryable 4xx errors (e.g. invalid auth) raise immediately.
         """
         attempt = 0
         while True:
             try:
-                return await self.client.chat.completions.create(
-                    model=self.settings.model_name,
-                    messages=messages,
-                    tools=tools,
-                )
-            except Exception as exc:  # noqa: BLE001 - see conditions below
+                Metrics.llm_calls.inc()
+                request_kwargs: dict[str, Any] = {
+                    "model": self.settings.model_name,
+                    "messages": messages,
+                    "tools": tools,
+                    "timeout": self.settings.llm_timeout_seconds,
+                }
+                # Forward the token cap under the parameter name the model expects.
+                request_kwargs[self.settings.max_tokens_param] = self.settings.max_output_tokens
+                response = await self.client.chat.completions.create(**request_kwargs)
+                return response, attempt
+            except Exception as exc:
                 if not self._should_retry(exc):
+                    Metrics.llm_errors.inc()
                     raise LLMError(f"Non-retryable API error: {exc}") from exc
                 if attempt >= retries:
+                    Metrics.llm_errors.inc()
                     raise LLMError(f"API unreachable after {retries} retries: {exc}") from exc
 
                 wait = self._retry_delay(exc, attempt)
@@ -115,6 +127,20 @@ class LLMService:
                 )
                 await asyncio.sleep(wait)
                 attempt += 1
+
+    def _record_usage(self, response: Any, retries: int) -> None:
+        """Record token usage from a successful response (best-effort)."""
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return
+        record_llm_usage(
+            logger,
+            prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+            total_tokens=int(getattr(usage, "total_tokens", 0) or 0),
+            model=self.settings.model_name,
+            retries=retries,
+        )
 
     @staticmethod
     def _should_retry(exc: Exception) -> bool:
