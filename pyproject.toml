@@ -29,7 +29,7 @@ dependencies = [
     # ASGI server (production entry point)
     "uvicorn==0.52.1",
 
-    # HTTP (Pushover notifications)
+    # HTTP client (tests use httpx ASGITransport)
     "httpx==0.28.1",
 
     # CV ingestion (PDF fallback)

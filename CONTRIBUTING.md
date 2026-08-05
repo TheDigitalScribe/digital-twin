@@ -41,8 +41,8 @@ mypy digitaltwin                       # type-check
   guardrail, prefer failing closed (blocking) and make bypasses explicit and
   difficult.
 - **Logging is structured.** Use `get_logger(__name__)` and pass
-  `extra={"event": "...", ...}`. Never log secrets — the `OPENAI_API_KEY`,
-  `TWIN_BACKGROUND`, and `PUSHOVER_*` values must stay out of logs.
+  `extra={"event": "...", ...}`. Never log secrets — the `OPENAI_API_KEY`
+  and `TWIN_BACKGROUND` values must stay out of logs.
 - **Metrics: one counter per user-visible event.** Extend `Metrics` in
   `observability.py` when you add a new event type; the `/metrics` endpoint
   picks it up automatically via `_COLLECTORS`.

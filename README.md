@@ -17,7 +17,7 @@ A self-representing AI chat agent that answers career questions on a candidate �
 - **Production readiness**
   - FastAPI app (`digitaltwin.app.build_app`) serving `/` (Gradio), `/healthz` (liveness), `/metrics` (Prometheus).
   - Structured JSON logs with per-request `request_id` correlation; LLM token-usage tracking (`/metrics` → `digitaltwin_llm_tokens_total`).
-  - Durable SQLite storage for captured leads and unknown questions (Pushover remains best-effort on top).
+  - Durable SQLite storage for captured leads and unknown questions.
   - TTL-based per-IP rate limiting (trusted-proxy aware), bounded conversation history, exponential-backoff retries with `Retry-After` support, token-cap + timeout bounds, graceful degradation, graceful shutdown.
   - Hardened container: non-root user, read-only rootfs, dropped capabilities, mem/pids limits, healthcheck.
 
@@ -139,24 +139,23 @@ See [docs/deployment.md](docs/deployment.md) — reverse-proxy/TLS setup (Caddy 
 
 See [`.env.example`](.env.example) for the full list. Key settings:
 
-| Variable                           | Required | Default                 | Description                                                                                                      |
-| ---------------------------------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`                   | ✅       | —                       | OpenAI (or compatible) API key                                                                                   |
-| `TWIN_BACKGROUND`                  | ✅       | —                       | Full candidate background (CV) text                                                                              |
-| `MODEL_NAME`                       |          | `gpt-5.4-mini`          | Chat model (must support tools)                                                                                  |
-| `MAX_MESSAGE_CHARS`                |          | `500`                   | Per-message length cap                                                                                           |
-| `MAX_HISTORY_TURNS`                |          | `10`                    | Conversation turns sent to model                                                                                 |
-| `MAX_OUTPUT_TOKENS`                |          | `1024`                  | Per-response token cap (cost/latency bound)                                                                      |
-| `MAX_TOKENS_PARAM`                 |          | `max_completion_tokens` | API param used for the token cap (`max_completion_tokens` for newer models, `max_tokens` for legacy chat models) |
-| `MAX_BACKGROUND_CHARS`             |          | `25000`                 | Cap on `retrieve_background` output                                                                              |
-| `LLM_TIMEOUT_SECONDS`              |          | `60`                    | Per-attempt timeout for chat-completions calls                                                                   |
-| `RATE_LIMIT_REQUESTS`              |          | `5`                     | Requests per IP per window                                                                                       |
-| `RATE_LIMIT_WINDOW_SECONDS`        |          | `60`                    | Rate-limit window                                                                                                |
-| `TRUSTED_PROXIES`                  |          | empty                   | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                       |
-| `LEADS_DB_PATH`                    |          | `data/leads.db`         | SQLite path for durable lead/question storage                                                                    |
-| `PUSHOVER_USER` / `PUSHOVER_TOKEN` |          | —                       | Optional lead-capture notifications                                                                              |
-| `TWIN_BEHAVIOR`                    |          | default behavior        | Operator-tunable behavior text (never weakens core rules)                                                        |
-| `LOG_LEVEL`                        |          | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`                                                                           |
+| Variable                    | Required | Default                 | Description                                                                                                      |
+| --------------------------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`            | ✅       | —                       | OpenAI (or compatible) API key                                                                                   |
+| `TWIN_BACKGROUND`           | ✅       | —                       | Full candidate background (CV) text                                                                              |
+| `MODEL_NAME`                |          | `gpt-5.4-mini`          | Chat model (must support tools)                                                                                  |
+| `MAX_MESSAGE_CHARS`         |          | `500`                   | Per-message length cap                                                                                           |
+| `MAX_HISTORY_TURNS`         |          | `10`                    | Conversation turns sent to model                                                                                 |
+| `MAX_OUTPUT_TOKENS`         |          | `1024`                  | Per-response token cap (cost/latency bound)                                                                      |
+| `MAX_TOKENS_PARAM`          |          | `max_completion_tokens` | API param used for the token cap (`max_completion_tokens` for newer models, `max_tokens` for legacy chat models) |
+| `MAX_BACKGROUND_CHARS`      |          | `25000`                 | Cap on `retrieve_background` output                                                                              |
+| `LLM_TIMEOUT_SECONDS`       |          | `60`                    | Per-attempt timeout for chat-completions calls                                                                   |
+| `RATE_LIMIT_REQUESTS`       |          | `5`                     | Requests per IP per window                                                                                       |
+| `RATE_LIMIT_WINDOW_SECONDS` |          | `60`                    | Rate-limit window                                                                                                |
+| `TRUSTED_PROXIES`           |          | empty                   | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                       |
+| `LEADS_DB_PATH`             |          | `data/leads.db`         | SQLite path for durable lead/question storage                                                                    |
+| `TWIN_BEHAVIOR`             |          | default behavior        | Operator-tunable behavior text (never weakens core rules)                                                        |
+| `LOG_LEVEL`                 |          | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`                                                                           |
 
 > **Security note:** always set `TRUSTED_PROXIES` when running behind a reverse proxy; otherwise `X-Forwarded-For` is ignored and rate limiting keys on the proxy's IP. Never use `0.0.0.0/0` in a multi-tenant deployment.
 

@@ -214,7 +214,6 @@ class TestOutputScrubbing:
             "The OPENAI_API_KEY is stored in an env file.",
             "My TWIN_SYSTEM_PROMPT contains all my instructions.",
             "TWIN_BACKGROUND has the full CV text.",
-            "PUSHOVER_TOKEN and PUSHOVER_USER are in .env.",
             "TWIN_BEHAVIOR controls my tone.",
         ],
     )

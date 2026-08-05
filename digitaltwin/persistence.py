@@ -1,10 +1,9 @@
 """Durable persistence for lead capture and unknown questions.
 
 Leads recorded via ``record_user_details`` and unknown questions via
-``record_unknown_question`` were previously fire-and-forget (Pushover-only,
-silently dropped if the HTTP call failed). This module adds a lightweight
-SQLite-backed store that never raises: if persistence fails for any reason,
-the caller falls back to best-effort logging as before.
+``record_unknown_question`` are stored in a lightweight SQLite-backed store
+that never raises: if persistence fails for any reason, the caller falls
+back to best-effort logging as before.
 
 Thread-safety: SQLite connections are per-call (opened/closed around each
 write) which is safe across the async event loop and cheap for the low write
@@ -80,7 +79,7 @@ def persist_lead(
     email: str, name: str = "Name not provided", notes: str = "Not provided"
 ) -> bool:
     """Persist a lead. Returns True on success, False when persistence is
-    disabled or the write fails (caller may still push/log)."""
+    disabled or the write fails (caller may still log)."""
     with _connect() as conn:
         if conn is None:
             logger.debug("Lead persistence disabled; skipping DB write")

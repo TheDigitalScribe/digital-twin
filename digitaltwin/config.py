@@ -108,14 +108,9 @@ class Settings(BaseSettings):
         default="INFO", description="Root log level (noisier = more verbose)."
     )
 
-    # --- Callback credentials (lead capture). Optional: if unset the tools
-    #     fall back to logging only.
-    pushover_user: str | None = Field(default=None, description="Pushover user key.")
-    pushover_token: str | None = Field(default=None, description="Pushover app token.")
-
     # --- Lead persistence ---------------------------------------------------
     # SQLite file path for durable lead/unknown-question storage. When unset,
-    # leads are only logged/pushed (best-effort). Path is resolved relative to
+    # leads are only logged (best-effort). Path is resolved relative to
     # the repository root.
     leads_db_path: str | None = Field(
         default="data/leads.db",
@@ -190,8 +185,6 @@ def get_settings() -> Settings:
 SECRET_KEYS: frozenset[str] = frozenset(
     {
         "OPENAI_API_KEY",
-        "PUSHOVER_USER",
-        "PUSHOVER_TOKEN",
         "TWIN_BACKGROUND",
         "TWIN_SYSTEM_PROMPT",
         "TWIN_BEHAVIOR",

@@ -72,7 +72,7 @@ runs on the host, or the nginx container IP in a compose network).
 
 ```bash
 cp .env.example .env
-# fill in OPENAI_API_KEY, TWIN_BACKGROUND, PUSHOVER_* (optional),
+# fill in OPENAI_API_KEY, TWIN_BACKGROUND,
 # TRUSTED_PROXIES (if behind a proxy)
 
 docker compose up -d --build
@@ -138,8 +138,8 @@ Until then, keep it to **one worker** for correct rate limiting.
 ## 5. Backups & hygiene
 
 - `./data/leads.db` holds captured leads + unknown questions. Back it up.
-- Rotate `OPENAI_API_KEY` and `PUSHOVER_*` per your org's policy. Secrets are
-  read from `.env` (compose) or environment; never commit `.env`.
+- Rotate `OPENAI_API_KEY` per your org's policy. Secrets are read from `.env`
+  (compose) or environment; never commit `.env`.
 - Pin the image tag in production (e.g. `digital-twin:0.3.0`) rather than
   `latest`.
 

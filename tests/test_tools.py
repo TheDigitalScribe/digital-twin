@@ -72,24 +72,12 @@ class TestDispatchTool:
         assert result == "OK"
 
     @pytest.mark.anyio
-    async def test_valid_arguments_accepted(self, monkeypatch):
-        import digitaltwin.tools as tools_module
-
-        pushed = []
-        async def fake_push(text: str) -> None:
-            pushed.append(text)
-
-        # Patch the module-level push_async so we don't hit the network, and
-        # capture what the tool would have sent on success.
-        monkeypatch.setattr(tools_module, "push_async", fake_push)
-
+    async def test_valid_arguments_accepted(self):
         result = await _dispatch_tool(
             "record_user_details",
             json.dumps({"email": "jane@example.com", "name": "Jane"}),
         )
         assert result == "OK"
-        assert pushed and "jane@example.com" in pushed[0]
-        assert "Jane" in pushed[0]
 
 
 class TestHandleToolCallsAsync:
