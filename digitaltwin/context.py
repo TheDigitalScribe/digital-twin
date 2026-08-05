@@ -159,7 +159,13 @@ projects, contact details) is NOT listed here. It is loaded on demand through
 the `retrieve_background` tool. Before answering any specific question about
 the candidate's skills, experience, education, certifications, or projects,
 you MUST call `retrieve_background` first and answer only from the facts it
-returns. Never invent details.
+returns.
+
+Specific work achievements (accomplishments, results, metrics, project impact)
+are NOT in the background — they live in a separate achievements knowledge
+base. When the visitor asks about specific achievements, results, impact, or
+accomplishments, call `retrieve_achievements` with the visitor's question and
+answer only from the retrieved facts. Never invent details.
 
 {_CORE_SECURITY}
 

@@ -324,16 +324,15 @@ class Metrics:
         ("digitaltwin_output_scrubbed_total", output_scrubbed, "Model replies scrubbed by output guardrail.", None),
         ("digitaltwin_llm_calls_total", llm_calls, "Chat completions API calls (including retries).", None),
         ("digitaltwin_llm_errors_total", llm_errors, "LLM API calls that failed after retries.", None),
-        ("digitaltwin_tool_calls_total", tool_calls, "Tool invocations dispatched.", None),
+        (
+            "digitaltwin_tool_calls_total",
+            tool_calls,
+            "Tool invocations dispatched, by tool name.",
+            ("tool",),
+        ),
         ("digitaltwin_tool_errors_total", tool_errors, "Tool invocations that errored.", None),
         ("digitaltwin_unmatched_questions_total", unmatched_questions, "Unknown questions recorded.", None),
         ("digitaltwin_leads_recorded_total", leads_recorded, "Leads captured via record_user_details.", None),
-        (
-            "digitaltwin_llm_tokens_total",
-            llm_tokens_total,
-            "Language-model tokens consumed, by kind (prompt|completion).",
-            ("kind",),
-        ),
         (
             "digitaltwin_security_events_total",
             security_events,

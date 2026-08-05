@@ -49,6 +49,13 @@ class RetrieveBackground(BaseModel):
     """No arguments required."""
 
 
+class RetrieveAchievements(BaseModel):
+    """Search the achievements knowledge base for content matching the visitor's question."""
+    question: str = Field(
+        description="The visitor's question about the candidate's work achievements."
+    )
+
+
 # ---------------------------------------------------------
 # 2. Convert Pydantic Models to OpenAI Tool Format
 # ---------------------------------------------------------
@@ -83,6 +90,22 @@ tools = [
             # Deliberately the minimal schema (unchanged from the original
             # hand-authored tool definition): no title/description clutter.
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "retrieve_achievements",
+            "description": (
+                "Search the candidate's work-achievement knowledge base (semantic RAG "
+                "over markdown achievement files) and return the most relevant "
+                "achievements for the visitor's question. Call this when the user asks "
+                "about specific work achievements, results, project impact, metrics, or "
+                "accomplishments that may not be in the Identity section. Pass the "
+                "visitor's question as the 'question' argument. Returns the relevant "
+                "achievement chunks as text."
+            ),
+            "parameters": RetrieveAchievements.model_json_schema(),
         },
     },
 ]
@@ -123,10 +146,24 @@ async def retrieve_background() -> str:
     return load_background()[: get_settings().max_background_chars]
 
 
+async def retrieve_achievements(question: str) -> str:
+    """Return the top-k achievement chunks semantically relevant to the question.
+
+    The model passes the visitor's question as the ``question`` argument; this
+    function embeds it, queries the local index, and returns a bounded
+    plain-text set of chunks for the model to synthesize. Gracefully degrades
+    when the index is missing or no match is found.
+    """
+    from .rag import retrieve_achievements as _retrieve
+
+    return await _retrieve(question)
+
+
 TOOL_MAP: dict[str, Any] = {
     "record_user_details": record_user_details,
     "record_unknown_question": record_unknown_question,
     "retrieve_background": retrieve_background,
+    "retrieve_achievements": retrieve_achievements,
 }
 
 # Name -> Pydantic model used for runtime argument validation.
@@ -134,6 +171,7 @@ _TOOL_SCHEMAS: dict[str, type[BaseModel]] = {
     "record_user_details": RecordUserDetails,
     "record_unknown_question": RecordUnknownQuestion,
     "retrieve_background": RetrieveBackground,
+    "retrieve_achievements": RetrieveAchievements,
 }
 
 
@@ -168,8 +206,11 @@ async def _dispatch_tool(tool_name: str, args_text: str) -> str:
     Returns the tool result as a plain string; the caller JSON-encodes it for
     the OpenAI tool-message format. Error conditions are returned as
     descriptive strings so the model can see exactly what went wrong.
+
+    The invocation is counted per-tool-name so ``/metrics`` can show how often
+    ``retrieve_achievements`` ran versus the other tools.
     """
-    Metrics.tool_calls.inc()
+    Metrics.tool_calls.inc(1.0, labels={"tool": tool_name})
     try:
         arguments = json.loads(args_text or "{}")
     except json.JSONDecodeError as exc:

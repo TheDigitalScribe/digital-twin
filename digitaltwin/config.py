@@ -103,6 +103,51 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Achievements RAG -----------------------------------------------------
+    # Lightweight semantic retrieval over the candidate's markdown achievement
+    # files. Source markdown and the JSON index live under data/ (gitignored)
+    # so private achievements never reach the public repo.
+    rag_achievements_dir: str = Field(
+        default="data/achievements",
+        description="Directory of markdown achievement files to index.",
+    )
+    rag_index_path: str = Field(
+        default="data/rag_index.json",
+        description="JSON index file produced by `python -m digitaltwin.rag`.",
+    )
+    rag_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI-compatible embedding model used for the RAG index.",
+    )
+    rag_top_k: int = Field(
+        default=3,
+        ge=1,
+        description="Number of retrieved achievement chunks returned per query.",
+    )
+    rag_chunk_chars: int = Field(
+        default=1000,
+        ge=100,
+        description="Approximate character cap for a single achievement chunk.",
+    )
+    rag_min_score: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Minimum cosine/dot-product similarity for a chunk to be returned by "
+            "retrieval. Queries with no chunk above this threshold return a "
+            "genuine no-match instead of generic filler."
+        ),
+    )
+    rag_eager_enabled: bool = Field(
+        default=True,
+        description=(
+            "Pre-fetch achievement context for achievement-like questions and "
+            "inject it before the model call. When disabled, retrieval relies "
+            "solely on the model choosing to call the retrieve_achievements tool."
+        ),
+    )
+
     # --- Logging ------------------------------------------------------------
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO", description="Root log level (noisier = more verbose)."

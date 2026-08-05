@@ -13,6 +13,7 @@ A self-representing AI chat agent that answers career questions on a candidate �
   2. **Input sandboxing (pre-model)** — heuristic scanner blocking prompt injection / prompt-extraction _before_ the request reaches the model. Detects homoglyphs, zero-width characters, letter-spacing, and fragment-fusion obfuscations. Now also scans conversation **history** turns for injected payloads.
   3. **Output scrubbing (post-model)** — scans the model's reply for leaked secrets, prompt text, API-key-shaped tokens, and internal tool names before display.
 - **Context minimization** — the full CV is never embedded in the system prompt; only a ≤400-char identity sketch lives there. The full background is fetched **on demand** via the `retrieve_background` tool (output capped by `MAX_BACKGROUND_CHARS`), so a leaked prompt exposes the bare minimum.
+- **Semantic RAG over work achievements** — markdown achievement files are chunked, embedded, and queried on demand via the `retrieve_achievements` tool, so the twin can answer specific questions about accomplishments and metrics without a vector database. The achievement source files and index live under `data/` (gitignored), keeping them out of the public repo.
 - **Function-calling tools with runtime Pydantic argument validation** — the model's JSON output is never trusted blindly.
 - **Production readiness**
   - FastAPI app (`digitaltwin.app.build_app`) serving `/` (Gradio), `/healthz` (liveness), `/metrics` (Prometheus).
@@ -53,6 +54,7 @@ A self-representing AI chat agent that answers career questions on a candidate �
 | `digitaltwin/chat.py`          | End-to-end request handler (steps 1–8)                                |
 | `digitaltwin/llm.py`           | OpenAI-compatible client, retry/timeout logic, tool loop, token usage |
 | `digitaltwin/tools.py`         | Tool schemas + async implementations + argument validation            |
+| `digitaltwin/rag.py`           | Lightweight semantic RAG (markdown chunking, embeddings, JSON index)  |
 | `digitaltwin/security.py`      | Layer A (input) + Layer B (output) guardrails                         |
 | `digitaltwin/context.py`       | System prompt assembly + context minimization                         |
 | `digitaltwin/config.py`        | Centralized, validated settings (pydantic-settings)                   |
@@ -115,6 +117,9 @@ pip install ".[dev]"
 
 cp .env.example .env             # then fill in OPENAI_API_KEY + TWIN_BACKGROUND
 
+# Optional: index your achievement markdown files (data/achievements/*.md) for semantic RAG
+python -m digitaltwin.rag
+
 python -m digitaltwin.app
 ```
 
@@ -139,25 +144,50 @@ See [docs/deployment.md](docs/deployment.md) — reverse-proxy/TLS setup (Caddy 
 
 See [`.env.example`](.env.example) for the full list. Key settings:
 
-| Variable                    | Required | Default                 | Description                                                                                                      |
-| --------------------------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`            | ✅       | —                       | OpenAI (or compatible) API key                                                                                   |
-| `TWIN_BACKGROUND`           | ✅       | —                       | Full candidate background (CV) text                                                                              |
-| `MODEL_NAME`                |          | `gpt-5.4-mini`          | Chat model (must support tools)                                                                                  |
-| `MAX_MESSAGE_CHARS`         |          | `500`                   | Per-message length cap                                                                                           |
-| `MAX_HISTORY_TURNS`         |          | `10`                    | Conversation turns sent to model                                                                                 |
-| `MAX_OUTPUT_TOKENS`         |          | `1024`                  | Per-response token cap (cost/latency bound)                                                                      |
-| `MAX_TOKENS_PARAM`          |          | `max_completion_tokens` | API param used for the token cap (`max_completion_tokens` for newer models, `max_tokens` for legacy chat models) |
-| `MAX_BACKGROUND_CHARS`      |          | `25000`                 | Cap on `retrieve_background` output                                                                              |
-| `LLM_TIMEOUT_SECONDS`       |          | `60`                    | Per-attempt timeout for chat-completions calls                                                                   |
-| `RATE_LIMIT_REQUESTS`       |          | `5`                     | Requests per IP per window                                                                                       |
-| `RATE_LIMIT_WINDOW_SECONDS` |          | `60`                    | Rate-limit window                                                                                                |
-| `TRUSTED_PROXIES`           |          | empty                   | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                       |
-| `LEADS_DB_PATH`             |          | `data/leads.db`         | SQLite path for durable lead/question storage                                                                    |
-| `TWIN_BEHAVIOR`             |          | default behavior        | Operator-tunable behavior text (never weakens core rules)                                                        |
-| `LOG_LEVEL`                 |          | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`                                                                           |
+| Variable                    | Required | Default                  | Description                                                                                                      |
+| --------------------------- | -------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`            | ✅       | —                        | OpenAI (or compatible) API key                                                                                   |
+| `TWIN_BACKGROUND`           | ✅       | —                        | Full candidate background (CV) text                                                                              |
+| `MODEL_NAME`                |          | `gpt-5.4-mini`           | Chat model (must support tools)                                                                                  |
+| `MAX_MESSAGE_CHARS`         |          | `500`                    | Per-message length cap                                                                                           |
+| `MAX_HISTORY_TURNS`         |          | `10`                     | Conversation turns sent to model                                                                                 |
+| `MAX_OUTPUT_TOKENS`         |          | `1024`                   | Per-response token cap (cost/latency bound)                                                                      |
+| `MAX_TOKENS_PARAM`          |          | `max_completion_tokens`  | API param used for the token cap (`max_completion_tokens` for newer models, `max_tokens` for legacy chat models) |
+| `MAX_BACKGROUND_CHARS`      |          | `25000`                  | Cap on `retrieve_background` output                                                                              |
+| `RAG_ACHIEVEMENTS_DIR`      |          | `data/achievements`      | Directory of markdown achievement files to index (gitignored)                                                    |
+| `RAG_INDEX_PATH`            |          | `data/rag_index.json`    | JSON vector index produced by `python -m digitaltwin.rag` (gitignored)                                           |
+| `RAG_EMBEDDING_MODEL`       |          | `text-embedding-3-small` | Embedding model used to build/query the index                                                                    |
+| `RAG_TOP_K`                 |          | `3`                      | Number of achievement chunks returned per retrieval                                                              |
+| `RAG_CHUNK_CHARS`           |          | `1000`                   | Approximate character cap for a single achievement chunk                                                         |
+| `RAG_MIN_SCORE`             |          | `0.25`                   | Minimum similarity for a chunk to be returned (filters generic filler)                                           |
+| `RAG_EAGER_ENABLED`         |          | `true`                   | Pre-fetch achievement context before the model call (recommended)                                                |
+| `LLM_TIMEOUT_SECONDS`       |          | `60`                     | Per-attempt timeout for chat-completions calls                                                                   |
+| `RATE_LIMIT_REQUESTS`       |          | `5`                      | Requests per IP per window                                                                                       |
+| `RATE_LIMIT_WINDOW_SECONDS` |          | `60`                     | Rate-limit window                                                                                                |
+| `TRUSTED_PROXIES`           |          | empty                    | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                       |
+| `LEADS_DB_PATH`             |          | `data/leads.db`          | SQLite path for durable lead/question storage                                                                    |
+| `TWIN_BEHAVIOR`             |          | default behavior         | Operator-tunable behavior text (never weakens core rules)                                                        |
+| `LOG_LEVEL`                 |          | `INFO`                   | `DEBUG` / `INFO` / `WARNING` / `ERROR`                                                                           |
 
 > **Security note:** always set `TRUSTED_PROXIES` when running behind a reverse proxy; otherwise `X-Forwarded-For` is ignored and rate limiting keys on the proxy's IP. Never use `0.0.0.0/0` in a multi-tenant deployment.
+
+---
+
+## Achievements RAG
+
+The twin can answer questions about specific work achievements (accomplishments, results, metrics, project impact) via semantic retrieval — without shipping a vector database.
+
+```
+data/achievements/*.md  ──►  chunk_markdown()  ──►  embed  ──►  data/rag_index.json
+                                                                      │
+visitor question ──► embed ──► top-k dot-product ──► retrieve_achievements tool ──► LLM answer
+```
+
+- **One command to build the index:** `python -m digitaltwin.rag`
+- **Chunks** are split on `##` headings and bounded by `RAG_CHUNK_CHARS`.
+- **Retrieval** is on demand: the `retrieve_achievements` tool embeds the visitor's question and returns the top-k most similar chunks — the full dataset is never injected into the prompt (context minimization).
+- **Graceful degradation:** if the index is missing (e.g. fresh clone), the tool returns a friendly "run `python -m digitaltwin.rag`" message instead of crashing.
+- **Privacy:** your achievement markdown and the JSON index live in `data/` — already gitignored, so they never reach the public repository. The index file is a deliberately simple JSON list of `{text, embedding}` pairs: for a personal dataset a single in-memory JSON file is the right-sized store. If the dataset ever grows beyond ~50k chunks, swap the storage layer for a vector DB behind the same `query_index`/`build_index` interface.
 
 ---
 

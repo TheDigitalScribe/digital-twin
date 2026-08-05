@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from digitaltwin import rag
 from digitaltwin.chat import ChatHandler
 from digitaltwin.config import Settings
 from digitaltwin.llm import LLMError
@@ -108,6 +109,70 @@ class TestOutputScrubbing:
         assert reply == DECLINE_OUTPUT
 
 
+class TestEagerRagContext:
+    """Eager RAG context should be injected into the system prompt for
+    achievement-like questions, and never break the turn on failure."""
+
+    def test_rag_context_appended_as_second_system_message(self):
+        handler = make_handler()
+        messages = handler._build_messages(
+            [],
+            "What did you achieve on project X?",
+            rag_context="(Source: one.md)\nBuilt a claims API.",
+        )
+        # system + rag-context system + user
+        assert len(messages) == 3
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "system"
+        assert "Retrieved Achievement Context" in messages[1]["content"]
+        assert "(Source: one.md)" in messages[1]["content"]
+        assert messages[2] == {
+            "role": "user",
+            "content": "What did you achieve on project X?",
+        }
+
+    def test_no_rag_context_no_extra_system_message(self):
+        handler = make_handler()
+        messages = handler._build_messages(
+            [], "Tell me about Python", rag_context=None
+        )
+        assert len(messages) == 2
+
+    @pytest.mark.anyio
+    async def test_maybe_rag_context_returns_context(self, monkeypatch):
+        async def fake_ctx(question: str) -> str | None:
+            return "retrieved-block"
+
+        monkeypatch.setattr(rag, "get_achievements_context", fake_ctx)
+        handler = make_handler()
+        assert (
+            await handler._maybe_rag_context("What did you achieve?")
+            == "retrieved-block"
+        )
+
+    @pytest.mark.anyio
+    async def test_maybe_rag_context_swallows_errors(self, monkeypatch):
+        async def boom(question: str) -> str | None:
+            raise RuntimeError("embedding service down")
+
+        monkeypatch.setattr(rag, "get_achievements_context", boom)
+        handler = make_handler()
+        assert await handler._maybe_rag_context("What did you achieve?") is None
+
+    @pytest.mark.anyio
+    async def test_eager_disabled_returns_none(self, monkeypatch):
+        called = []
+
+        async def fake_ctx(question: str) -> str | None:
+            called.append(question)
+            return "retrieved-block"
+
+        monkeypatch.setattr(rag, "get_achievements_context", fake_ctx)
+        handler = make_handler(rag_eager_enabled=False)
+        assert await handler._maybe_rag_context("What did you achieve?") is None
+        assert called == []
+
+
 class TestGracefulDegradation:
     @pytest.mark.anyio
     async def test_llm_error_returns_fallback(self):
@@ -179,7 +244,9 @@ class TestGradioHistoryNormalization:
     def test_list_of_parts_content_flattened(self):
         handler = make_handler()
         # Gradio can represent content as a list of part-objects.
-        history = [[[{"type": "text", "text": "part one"}, {"type": "text", "text": "part two"}], "a"]]
+        history = [
+            [[{"type": "text", "text": "part one"}, {"type": "text", "text": "part two"}], "a"]
+        ]
         messages = handler._build_messages(history, "current")
         assert messages[1]["role"] == "user"
         assert "part one" in messages[1]["content"]

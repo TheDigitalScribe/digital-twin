@@ -139,8 +139,14 @@ class ChatHandler:
                 )
                 return DECLINE_INPUT
 
-        # 6) Build a bounded message list.
-        messages = self._build_messages(history or [], message_text)
+        # 6) Build a bounded message list. Eager RAG context for
+        #    achievement-like questions is fetched BEFORE the first model call
+        #    (best-effort; failures never break the turn) and injected as an
+        #    additional system message. This removes the model's discretion as
+        #    the single point of failure for retrieval.
+        messages = self._build_messages(
+            history or [], message_text, rag_context=await self._maybe_rag_context(message_text)
+        )
 
         # 7) Model call (+ tool loop) with graceful degradation.
         try:
@@ -163,7 +169,10 @@ class ChatHandler:
     # ------------------------------------------------------------------
 
     def _build_messages(
-        self, history: list[Any], user_text: str
+        self,
+        history: list[Any],
+        user_text: str,
+        rag_context: str | None = None,
     ) -> list[dict[str, Any]]:
         """Assemble the OpenAI message list from Gradio history.
 
@@ -171,6 +180,12 @@ class ChatHandler:
         only the most recent ``max_history_turns`` turns to bound both cost
         and the injection surface (older assistant turns are the ideal place
         to hide prompt-injection artifacts).
+
+        When ``rag_context`` is provided (eagerly retrieved achievements), it
+        is appended as a second system message so the model answers from those
+        facts for this turn without needing to call the tool. The content is
+        context already fetched by our own code — it is never user-controllable
+        text, so it does not expand the prompt-injection surface.
 
         History entries are normalized to plain strings: Gradio 6 may pass
         plain strings, dicts (``{"role", "content", ...}``), or ChatMessage
@@ -182,6 +197,20 @@ class ChatHandler:
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": TWIN_SYSTEM_PROMPT}
         ]
+        if rag_context:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "# Retrieved Achievement Context\n"
+                        "The visitor's question relates to work achievements. "
+                        "Use the retrieved facts below to answer. Do not invent "
+                        "details not present here; prefer them over the Identity "
+                        "sketch when they conflict.\n\n"
+                        f"{rag_context}"
+                    ),
+                }
+            )
         for turn in turns:
             user_part = turn[0] if isinstance(turn, (list, tuple)) else turn
             assistant_part = (
@@ -201,6 +230,27 @@ class ChatHandler:
                 )
         messages.append({"role": "user", "content": user_text})
         return messages
+
+    async def _maybe_rag_context(self, question: str) -> str | None:
+        """Best-effort eager RAG context. Never raises; returns None on any
+        failure so retrieval cannot break the chat turn.
+
+        When enabled via ``RAG_EAGER_ENABLED`` (default on), achievement-like
+        questions get their retrieved chunks injected into the system prompt.
+        A missing index or infra failure simply degrades to no context.
+        """
+        if not self.settings.rag_eager_enabled:
+            return None
+        from .rag import get_achievements_context
+
+        try:
+            return await get_achievements_context(question)
+        except Exception:
+            logger.exception(
+                "Eager RAG context retrieval failed (degrading to no context)",
+                extra={"event": "rag_eager_error"},
+            )
+            return None
 
     @staticmethod
     def _extract_message_text(entry: Any) -> str:
