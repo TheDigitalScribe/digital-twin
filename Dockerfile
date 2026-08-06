@@ -17,8 +17,12 @@ FROM python:3.12-slim AS base
 # Non-root user for runtime (defense-in-depth: don't run the app as root).
 # Group 1000 is added so the appuser can read Render's Secret Files: Render
 # mounts them at /etc/secrets/<filename> owned by group 1000, and Render's own
-# docs require the app user be in group 1000 to read them.
-RUN useradd --create-home --shell /bin/bash -G 1000 appuser
+# docs require the app user be in group 1000 to read them. The group must be
+# created explicitly first — it does not exist in the base image. Using -G (a
+# supplementary group) leaves appuser's primary group intact so the existing
+# `chown appuser:appuser` /app/data ownership further down still works.
+RUN groupadd --gid 1000 render-secrets \
+    && useradd --create-home --shell /bin/bash -G 1000 appuser
 
 WORKDIR /app
 
