@@ -166,14 +166,17 @@ deploy.
 
 - The **public repository contains no achievement data**. `data/` (achievement
   files, `rag_index.json`, CVs, etc.) is gitignored and dockerignored.
-- You supply the achievements **privately**, via a Render **Secret File**
-  mounted at `/app/data/achievements/achievements.md`. Render stores the
-  contents encrypted and injects them into the running container — they are
-  never committed to git.
-- On each container start, `docker-entrypoint.sh` runs
-  `python -m digitaltwin.rag` to (re)build `data/rag_index.json` from that
-  secret file. The index lives only for the container's lifetime; the raw
-  achievements never ship in the public image.
+- You supply the achievements **privately**, via a Render **Secret File** named
+  `achievements.md`. Render mounts every Secret File at
+  `/etc/secrets/<filename>` (there is **no custom mount-path field**, and
+  filenames cannot contain `/`), so the file lands at
+  `/etc/secrets/achievements.md`. On each container start
+  `docker-entrypoint.sh` stages it into `/app/data/achievements/` and rebuilds
+  `data/rag_index.json` from it. Render stores the contents encrypted and
+  injects them into the running container — they are never committed to git.
+- `docker-entrypoint.sh` rebuilds the RAG index on every start. The index lives
+  only for the container's lifetime; the raw achievements never ship in the
+  public image.
 
 ### 7.2 Deploy via the Blueprint
 
@@ -184,10 +187,12 @@ deploy.
    - `OPENAI_API_KEY` — used for chat **and** RAG query embeddings.
    - `TWIN_BACKGROUND` — your candidate background/CV text.
    - `TRUSTED_PROXIES` (optional) — if you front Render with your own proxy.
-4. Create a **Secret File** mounted at
-   `/app/data/achievements/achievements.md` and paste your real achievements
-   markdown into it (use one `##` heading per achievement — see
-   `digitaltwin/rag.py` for the chunking rules).
+4. Add a **Secret File** named `achievements.md` and paste your real
+   achievements markdown into it (use one `##` heading per achievement — see
+   `digitaltwin/rag.py` for the chunking rules). Recent Render versions may
+   also surface a "Mount Path" option for the Secret Files set as a whole; if
+   present, leave it at the default (`/etc/secrets`) — the entrypoint reads
+   the staged files from there automatically.
 5. Deploy (or trigger **Manual Deploy → Clear build cache & deploy**).
 
 After deployment:
@@ -195,6 +200,10 @@ After deployment:
 - The `healthCheckPath` `/healthz` is already configured; the deploy fails if
   the service is not healthy.
 - `GET https://<your-service>.onrender.com/healthz` should return `200 OK`.
+- Check the service logs for one of these entrypoint lines to confirm the
+  secret file was found:
+  - `Staged <N> achievement secret file(s) from /etc/secrets/. Rebuilding RAG index...`
+  - `No achievement secret files found under /etc/secrets/ — skipping RAG index build.`
 
 ### 7.3 Updating your achievements
 

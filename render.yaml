@@ -11,9 +11,11 @@
 # Secrets are NOT declared here (they're set in the Render dashboard after the
 # Blueprint creates the service):
 #   * OPENAI_API_KEY and TWIN_BACKGROUND  -> Environment Variables
-#   * Achievements markdown               -> a "Secret File", and the mount
-#     path must be set so the file lands at container path
-#     /app/data/achievements/achievements.md
+#   * Achievements markdown               -> a "Secret File". Render mounts
+#     every Secret File at /etc/secrets/<filename> (there is NO custom mount
+#     path field, and filenames cannot contain '/'), so just name it
+#     `achievements.md`. docker-entrypoint.sh automatically stages it from
+#     /etc/secrets/ into /app/data/achievements/ before building the RAG index.
 #     (see docs/deployment.md §7 and the setup steps below).
 #
 
@@ -60,9 +62,11 @@ services:
 
 # After the Blueprint creates the service, finish in the Render dashboard:
 #   1. Set OPENAI_API_KEY and TWIN_BACKGROUND  (Environment tab).
-#   2. Add a "Secret File" named `achievements.md` and set its mount path to
-#      /app/data/achievements/achievements.md — paste your private achievements
-#      markdown there (use one `##` heading per achievement; see rag.py).
+#   2. Add a "Secret File" named `achievements.md` — paste your private
+#      achievements markdown there (use one `##` heading per achievement; see
+#      rag.py). There is NO mount-path field: Render automatically places the
+#      file at /etc/secrets/achievements.md, which the entrypoint reads and
+#      stages into /app/data/achievements/ before building the RAG index.
 #   3. Trigger a deploy (Manual Deploy → Clear build cache & deploy).
 #
 # Your achievements stay out of git and out of the public image; the index is

@@ -4,8 +4,9 @@
 #
 # Privacy model for Render:
 #   * The achievements markdown is NEVER baked into the image — it is supplied
-#     privately via a Render "Secret File" mounted at runtime at
-#     /app/data/achievements/achievements.md.
+#     privately via a Render "Secret File". Render mounts every Secret File at
+#     /etc/secrets/<filename> (no custom mount path available). The entrypoint
+#     stages it into /app/data/achievements/ from there.
 #   * docker-entrypoint.sh builds the RAG index from that file on each
 #     container start, writing to /app/data/rag_index.json — so the public
 #     image never ships the raw achievements, only the ephemeral index.
@@ -14,7 +15,10 @@
 FROM python:3.12-slim AS base
 
 # Non-root user for runtime (defense-in-depth: don't run the app as root).
-RUN useradd --create-home --shell /bin/bash appuser
+# Group 1000 is added so the appuser can read Render's Secret Files: Render
+# mounts them at /etc/secrets/<filename> owned by group 1000, and Render's own
+# docs require the app user be in group 1000 to read them.
+RUN useradd --create-home --shell /bin/bash -G 1000 appuser
 
 WORKDIR /app
 
