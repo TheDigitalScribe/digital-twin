@@ -1,6 +1,14 @@
 # ---------------------------------------------------------------------------
 # Digital Twin — container image
 # Multi-stage build keeps the runtime image lean (no build tooling).
+#
+# Privacy model for Render:
+#   * The achievements markdown is NEVER baked into the image — it is supplied
+#     privately via a Render "Secret File" mounted at runtime at
+#     /app/data/achievements/achievements.md.
+#   * docker-entrypoint.sh builds the RAG index from that file on each
+#     container start, writing to /app/data/rag_index.json — so the public
+#     image never ships the raw achievements, only the ephemeral index.
 # ---------------------------------------------------------------------------
 
 FROM python:3.12-slim AS base
@@ -19,14 +27,21 @@ RUN pip install --no-cache-dir .
 # Security: strip setuid bits from binaries (hardens image).
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
 
-# Persistent lead-capture database lives here (mounted as a volume).
-RUN mkdir -p /data && chown appuser:appuser /data
+# Writable data directory. At runtime the entrypoint builds the RAG index here
+# from the Render secret file (data/achievements/*.md). appuser owns it so the
+# index can be written even though the container is non-root.
+RUN mkdir -p /app/data/achievements && chown -R appuser:appuser /app/data
+
+# Entrypoint: builds the RAG index (if achievements are present), then launches
+# the app. It is public (no secrets) and runs as appuser.
+COPY --chmod=755 docker-entrypoint.sh /docker-entrypoint.sh
 
 USER appuser
 EXPOSE 7860
 
 # Container health: the app exposes /healthz via the FastAPI mount.
-HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/healthz', timeout=2).read()" || exit 1
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["python", "-m", "digitaltwin.app"]

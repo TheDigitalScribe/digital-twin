@@ -9,8 +9,6 @@ from digitaltwin.tools import (
     TOOL_MAP,
     _dispatch_tool,
     handle_tool_calls_async,
-    record_unknown_question,
-    record_user_details,
     retrieve_background,
     tools,
 )
@@ -46,45 +44,35 @@ class TestDispatchTool:
 
     @pytest.mark.anyio
     async def test_malformed_json_returns_error(self):
-        result = await _dispatch_tool("record_user_details", "{not json")
+        result = await _dispatch_tool("retrieve_background", "{not json")
         assert "malformed" in result.lower()
 
     @pytest.mark.anyio
     async def test_non_object_arguments_return_error(self):
-        result = await _dispatch_tool("record_user_details", '"a string"')
+        result = await _dispatch_tool("retrieve_background", '"a string"')
         assert "object" in result.lower()
 
     @pytest.mark.anyio
     async def test_invalid_arguments_return_validation_error(self):
-        # Email is required; missing -> validation error.
-        result = await _dispatch_tool("record_user_details", "{}")
+        # question is required; missing -> validation error.
+        result = await _dispatch_tool("retrieve_achievements", "{}")
         assert "invalid arguments" in result.lower()
-
-    @pytest.mark.anyio
-    async def test_best_effort_email_accepted(self):
-        # Email is deliberately a plain non-empty string (best-effort lead
-        # capture): the model may have to record a visitor's details before
-        # a strictly-valid address is confirmed ("unknown", typo, etc.).
-        result = await _dispatch_tool(
-            "record_user_details",
-            json.dumps({"email": "unknown", "name": "Jane"}),
-        )
-        assert result == "OK"
 
     @pytest.mark.anyio
     async def test_valid_arguments_accepted(self):
         result = await _dispatch_tool(
-            "record_user_details",
-            json.dumps({"email": "jane@example.com", "name": "Jane"}),
+            "retrieve_achievements",
+            json.dumps({"question": "What projects are you most proud of?"}),
         )
-        assert result == "OK"
+        # No index in the test env -> graceful degradation rather than an error.
+        assert "invalid arguments" not in result.lower()
 
 
 class TestHandleToolCallsAsync:
     @pytest.mark.anyio
     async def test_returns_openai_tool_messages(self):
         calls = [
-            fake_tool_call("record_unknown_question", json.dumps({"question": "How old are you?"})),
+            fake_tool_call("retrieve_background", "{}"),
             fake_tool_call("unknown_tool", "{}", call_id="call_2"),
         ]
         results = await handle_tool_calls_async(calls)
@@ -92,7 +80,7 @@ class TestHandleToolCallsAsync:
         assert len(results) == 2
         assert results[0]["role"] == "tool"
         assert results[0]["tool_call_id"] == "call_1"
-        assert results[0]["content"] == '"OK"'
+        assert json.loads(results[0]["content"])  # background text, non-empty
         assert results[1]["tool_call_id"] == "call_2"
         assert "unknown tool" in results[1]["content"].lower()
 
@@ -108,14 +96,6 @@ class TestHandleToolCallsAsync:
 # ---------------------------------------------------------------------------
 
 class TestToolImplementations:
-    @pytest.mark.anyio
-    async def test_record_user_details_returns_ok(self):
-        assert await record_user_details("a@b.com", "Alice") == "OK"
-
-    @pytest.mark.anyio
-    async def test_record_unknown_question_returns_ok(self):
-        assert await record_unknown_question("What is X?") == "OK"
-
     @pytest.mark.anyio
     async def test_retrieve_background_returns_non_empty(self):
         bg = await retrieve_background()

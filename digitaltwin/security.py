@@ -242,8 +242,6 @@ def _output_leak_detected(content: str) -> str | None:
     # even paraphrased dumps trip this.
     if ("s1" in low or "s2" in low or "s3" in low) and "non-negotiable" in low:
         return "system-prompt-text"
-    if "fallback rule" in low and "record_unknown_question" in low:
-        return "system-prompt-text"
 
     # 3) Explicitly states it is disclosing its prompt/settings.
     for snippet in [
@@ -257,13 +255,10 @@ def _output_leak_detected(content: str) -> str | None:
     if re.search(r"sk-[A-Za-z0-9_\-]{20,}", content):
         return "api-key-like-token"
 
-    # 5) Tool names leaking (internal interface disclosure).
-    # record_unknown_question is legitimately mentioned in the fallback rule,
-    # but if the raw function name / signature leaks we treat it as internal
-    # disclosure only when paired with config-ish phrasing.
-    if ("handle_tool_calls_async" in content or "record_unknown_question" in content) and (
-        "record_unknown_question" in low and "function" in low
-    ):
+    # 5) Tool names leaking (internal interface disclosure). The dispatch
+    # machinery (handle_tool_calls_async, _dispatch_tool) is never mentioned
+    # in the system prompt; if it leaks we treat it as internal disclosure.
+    if "handle_tool_calls_async" in content or "_dispatch_tool" in content:
         return "internal-tool-disclosure"
 
     return None

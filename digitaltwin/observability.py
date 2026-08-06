@@ -307,8 +307,6 @@ class Metrics:
     llm_errors = _Counter()
     tool_calls = _Counter()
     tool_errors = _Counter()
-    unmatched_questions = _Counter()
-    leads_recorded = _Counter()
     security_events = _Counter()
     llm_tokens_total = _Counter()
 
@@ -331,8 +329,6 @@ class Metrics:
             ("tool",),
         ),
         ("digitaltwin_tool_errors_total", tool_errors, "Tool invocations that errored.", None),
-        ("digitaltwin_unmatched_questions_total", unmatched_questions, "Unknown questions recorded.", None),
-        ("digitaltwin_leads_recorded_total", leads_recorded, "Leads captured via record_user_details.", None),
         (
             "digitaltwin_security_events_total",
             security_events,

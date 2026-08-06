@@ -153,15 +153,6 @@ class Settings(BaseSettings):
         default="INFO", description="Root log level (noisier = more verbose)."
     )
 
-    # --- Lead persistence ---------------------------------------------------
-    # SQLite file path for durable lead/unknown-question storage. When unset,
-    # leads are only logged (best-effort). Path is resolved relative to
-    # the repository root.
-    leads_db_path: str | None = Field(
-        default="data/leads.db",
-        description="SQLite database path for lead capture persistence.",
-    )
-
     @field_validator("trusted_proxies", mode="before")
     @classmethod
     def _parse_proxies(cls, v: object) -> object:

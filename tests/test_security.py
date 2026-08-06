@@ -194,7 +194,7 @@ CLEAN_OUTPUTS = [
     "I specialize in Python, Kubernetes, and AWS.",
     "Yes, I have experience leading teams of 5+ engineers.",
     "I'm happy to connect — feel free to share your email.",
-    "That detail isn't in my background yet, but I've logged it.",
+    "That detail isn't in my background yet, but I'd be happy to note it for later.",
     "I don't have that information available.",
 ]
 
@@ -253,7 +253,8 @@ class TestOutputScrubbing:
         assert scrub_output(content) == DECLINE_OUTPUT
 
     def test_internal_tool_disclosure_blocked(self):
-        assert scrub_output("The record_unknown_question function is called when...") == DECLINE_OUTPUT
+        assert scrub_output("The handle_tool_calls_async function dispatches tools internally.") == DECLINE_OUTPUT
+        assert scrub_output("The _dispatch_tool function is internal to the app.") == DECLINE_OUTPUT
 
     def test_obfuscated_secret_key_name_blocked(self):
         # Zero-width chars inside the secret name.
@@ -284,5 +285,5 @@ class TestOutputLeakDetection:
         assert result == "prompt-disclosure"
 
     def test_returns_internal_tool_disclosure(self):
-        result = _output_leak_detected("The record_unknown_question function is internal.")
+        result = _output_leak_detected("The handle_tool_calls_async function is internal.")
         assert result == "internal-tool-disclosure"

@@ -6,8 +6,7 @@
 # Production notes:
 #   * Always put a reverse proxy (nginx/Caddy/Traefik) in front with TLS;
 #     only the proxy's IP should be in TRUSTED_PROXIES.
-#   * The data/ volume persists captured leads — never restart without it
-#     if you care about that data.
+#   * Render's free tier is ephemeral, so no persistent volume is needed.
 # ---------------------------------------------------------------------------
 
 services:
@@ -21,17 +20,9 @@ services:
       - '127.0.0.1:7860:7860'
     env_file:
       - .env
-    # Persistent lead-capture DB (matching the container path from the
-    # Dockerfile). Bind-mount is simplest for single-host deployments.
-    volumes:
-      - ./data:/data
-    environment:
-      # Make the app write the leads DB inside the mounted volume.
-      # Override via .env if you prefer a different path.
-      LEADS_DB_PATH: ${LEADS_DB_PATH:-/data/leads.db}
     restart: unless-stopped
-    # Security hardening: no capabilities, read-only root fs (only the data
-    # dir is writable), and pids/mem limits to contain runaway behavior.
+    # Security hardening: no capabilities, read-only root fs, and pids/mem
+    # limits to contain runaway behavior.
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -41,6 +32,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+      # Writable location for the RAG index built by docker-entrypoint.sh at
+      # container start. Ephemeral (in-memory) by design — see docs/deployment.md §7.
+      - /app/data
     pids_limit: 512
     mem_limit: 512m
     # Healthcheck mirrors the Dockerfile (compose-level so `docker compose ps`

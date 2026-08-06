@@ -6,6 +6,16 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Removed
+
+- **Lead capture & SQLite persistence removed.** `digitaltwin/persistence.py`,
+  the `record_user_details` / `record_unknown_question` tools, the
+  `LEADS_DB_PATH` setting, Pushover notifications, and the `data/` volume were
+  removed. Render's free tier is ephemeral, so visitor data cannot be
+  persisted; the app is now stateless (no volume or DB required).
+- `./data` volume removed from `docker-compose.yml`; `/data` directory removed
+  from the `Dockerfile`.
+
 ### Changed
 
 - **Reduced input-sandbox false positives on legitimate career questions.**
@@ -49,10 +59,6 @@ All notable changes to this project are documented here. Format follows
   - Security events increment counters and carry structured fields
     (`security_event`, `ip`, `reason`, `request_id`).
 - **Reliability**:
-  - `digitaltwin/persistence.py` — SQLite-backed durable storage for leads
-    (`record_user_details`) and unknown questions
-    (`record_unknown_question`). Pushover notifications remain best-effort
-    on top; persistence never raises.
   - Conversation **history turns are now scanned** through the input
     guardrail before being sent to the model, blocking injection payloads
     hidden in older turns.
@@ -64,14 +70,12 @@ All notable changes to this project are documented here. Format follows
     shared default handler).
   - `TWIN_BEHAVIOR` moved into `Settings` (added `twin_behavior` field),
     removing the raw `os.getenv` in `context.py`.
-  - Shared connection-pooled `httpx.AsyncClient` for Pushover, keyed by the
-    running event loop (safe under per-test loops and production).
 - **Hardening**:
   - `Dockerfile`: copies `README.md` (fixes broken `pip install .`),
-    adds `HEALTHCHECK`, writable `/data`, setuid stripping.
+    adds `HEALTHCHECK`, setuid stripping.
   - `.dockerignore` and hardened `docker-compose.yml`: non-root user,
     `no-new-privileges`, all caps dropped, read-only root fs, mem/pids
-    limits, healthcheck, `./data` volume for the leads DB.
+    limits, healthcheck.
   - CI: Python 3.13 added to the matrix; new `pip-audit` job for CVE
     scanning; `Dependabot` config for pip + GitHub Actions.
 - **Docs**: `SECURITY.md`, `CONTRIBUTING.md`, `docs/deployment.md`
@@ -82,7 +86,7 @@ All notable changes to this project are documented here. Format follows
 - Version bumped to `0.3.0` (single source in `pyproject.toml` +
   `digitaltwin/__init__.py`).
 - `.env.example` documents `MAX_OUTPUT_TOKENS`, `MAX_BACKGROUND_CHARS`,
-  `LLM_TIMEOUT_SECONDS`, `LEADS_DB_PATH`, `TWIN_BEHAVIOR`.
+  `LLM_TIMEOUT_SECONDS`, `TWIN_BEHAVIOR`.
 
 ### Fixed
 

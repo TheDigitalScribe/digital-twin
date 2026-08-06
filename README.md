@@ -18,7 +18,6 @@ A self-representing AI chat agent that answers career questions on a candidate â
 - **Production readiness**
   - FastAPI app (`digitaltwin.app.build_app`) serving `/` (Gradio), `/healthz` (liveness), `/metrics` (Prometheus).
   - Structured JSON logs with per-request `request_id` correlation; LLM token-usage tracking (`/metrics` â†’ `digitaltwin_llm_tokens_total`).
-  - Durable SQLite storage for captured leads and unknown questions.
   - TTL-based per-IP rate limiting (trusted-proxy aware), bounded conversation history, exponential-backoff retries with `Retry-After` support, token-cap + timeout bounds, graceful degradation, graceful shutdown.
   - Hardened container: non-root user, read-only rootfs, dropped capabilities, mem/pids limits, healthcheck.
 
@@ -59,7 +58,6 @@ A self-representing AI chat agent that answers career questions on a candidate â
 | `digitaltwin/context.py`       | System prompt assembly + context minimization                         |
 | `digitaltwin/config.py`        | Centralized, validated settings (pydantic-settings)                   |
 | `digitaltwin/rate_limiter.py`  | TTL-bucketed per-client rate limiting                                 |
-| `digitaltwin/persistence.py`   | SQLite persistence for leads & unknown questions                      |
 | `digitaltwin/observability.py` | Structured JSON logs, request IDs, Prometheus-style metrics           |
 | `digitaltwin/logger.py`        | Compatibility shim (re-exports `observability`)                       |
 | `digitaltwin/styles.py`        | CSS/JS theming for the Gradio UI                                      |
@@ -165,7 +163,6 @@ See [`.env.example`](.env.example) for the full list. Key settings:
 | `RATE_LIMIT_REQUESTS`       |          | `5`                      | Requests per IP per window                                                                                       |
 | `RATE_LIMIT_WINDOW_SECONDS` |          | `60`                     | Rate-limit window                                                                                                |
 | `TRUSTED_PROXIES`           |          | empty                    | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                       |
-| `LEADS_DB_PATH`             |          | `data/leads.db`          | SQLite path for durable lead/question storage                                                                    |
 | `TWIN_BEHAVIOR`             |          | default behavior         | Operator-tunable behavior text (never weakens core rules)                                                        |
 | `LOG_LEVEL`                 |          | `INFO`                   | `DEBUG` / `INFO` / `WARNING` / `ERROR`                                                                           |
 

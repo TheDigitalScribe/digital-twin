@@ -46,8 +46,6 @@ mypy digitaltwin                       # type-check
 - **Metrics: one counter per user-visible event.** Extend `Metrics` in
   `observability.py` when you add a new event type; the `/metrics` endpoint
   picks it up automatically via `_COLLECTORS`.
-- **Persistence is best-effort.** DB writes must never raise into the tool
-  path; return a bool and let the caller decide.
 
 ## Testing expectations
 
@@ -56,8 +54,6 @@ mypy digitaltwin                       # type-check
 - Security-related changes should add regression cases to the attack corpus
   in `tests/test_security.py` and, if relevant, the history-scan tests in
   `tests/test_chat.py`.
-- Persistence tests use `tmp_path` and the `isolated_db` fixture — never the
-  real `data/`.
 
 ## Docs
 

@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field, ValidationError
 from .config import get_settings
 from .logger import get_logger, log_security_event
 from .observability import Metrics
-from .persistence import persist_lead, persist_unknown_question
 
 logger = get_logger(__name__)
 
@@ -23,27 +22,6 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------
 # 1. Pydantic Models for Tool Schemas + Runtime Validation
 # ---------------------------------------------------------
-
-class RecordUserDetails(BaseModel):
-    """Record that a visitor is interested in getting in touch and provided contact info.
-
-    ``email`` is deliberately a plain non-empty string rather than an
-    EmailStr: the model sometimes has to record a visitor's details before a
-    valid address is confirmed (e.g. the user says "it's my work email",
-    "unknown", or a typo). Best-effort lead capture means we record what was
-    given and let a human review it — silently dropping the lead because the
-    address didn't pass strict validation is worse than capturing "unknown".
-    """
-
-    email: str = Field(min_length=1, description="The email address provided by the user.")
-    name: str = Field(default="Name not provided", description="The user's name, if provided.")
-    notes: str = Field(default="Not provided", description="Any additional conversation context worth recording.")
-
-
-class RecordUnknownQuestion(BaseModel):
-    """Always use this tool to record any question about the person that couldn't be answered."""
-    question: str = Field(description="The question that couldn't be answered.")
-
 
 class RetrieveBackground(BaseModel):
     """No arguments required."""
@@ -61,22 +39,6 @@ class RetrieveAchievements(BaseModel):
 # ---------------------------------------------------------
 
 tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "record_user_details",
-            "description": RecordUserDetails.__doc__,
-            "parameters": RecordUserDetails.model_json_schema(),
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "record_unknown_question",
-            "description": RecordUnknownQuestion.__doc__,
-            "parameters": RecordUnknownQuestion.model_json_schema(),
-        },
-    },
     {
         "type": "function",
         "function": {
@@ -115,22 +77,6 @@ tools = [
 # 3. Async Tool Implementation & Execution
 # ---------------------------------------------------------
 
-async def record_user_details(
-    email: str, name: str = "Name not provided", notes: str = "Not provided"
-) -> str:
-    """Persist the lead durably."""
-    Metrics.leads_recorded.inc()
-    persist_lead(email, name, notes)
-    return "OK"
-
-
-async def record_unknown_question(question: str) -> str:
-    """Persist the unanswered question durably."""
-    Metrics.unmatched_questions.inc()
-    persist_unknown_question(question)
-    return "OK"
-
-
 async def retrieve_background() -> str:
     """Return the background text (CV), bounded to ``max_background_chars``.
 
@@ -160,16 +106,12 @@ async def retrieve_achievements(question: str) -> str:
 
 
 TOOL_MAP: dict[str, Any] = {
-    "record_user_details": record_user_details,
-    "record_unknown_question": record_unknown_question,
     "retrieve_background": retrieve_background,
     "retrieve_achievements": retrieve_achievements,
 }
 
 # Name -> Pydantic model used for runtime argument validation.
 _TOOL_SCHEMAS: dict[str, type[BaseModel]] = {
-    "record_user_details": RecordUserDetails,
-    "record_unknown_question": RecordUnknownQuestion,
     "retrieve_background": RetrieveBackground,
     "retrieve_achievements": RetrieveAchievements,
 }
