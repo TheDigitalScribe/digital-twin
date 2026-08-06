@@ -46,6 +46,15 @@ services:
         # If you front Render with your own proxy, narrow this to that proxy's
         # IP/range instead (see docs/deployment.md §1).
         value: 0.0.0.0/0
+      - key: RATE_LIMIT_REQUESTS
+
+        # Max requests per visitor IP per window. Now matches the app default
+        # (30/60s, see digitaltwin/config.py); declared explicitly here so it's
+        # visible at deploy time. Bump up or down to taste (min 1).
+        value: '30'
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        # Length of the rate-limit window in seconds (default 60).
+        value: '60'
       - key: PYTHONUNBUFFERED
         value: '1'
 

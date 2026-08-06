@@ -69,7 +69,7 @@ class Settings(BaseSettings):
 
     # --- Rate limiting (per client IP) ------------------------------------
     rate_limit_requests: int = Field(
-        default=5, ge=1, description="Max requests per IP per window."
+        default=30, ge=1, description="Max requests per IP per window."
     )
     rate_limit_window_seconds: int = Field(
         default=60, ge=1, description="Rate-limit window length in seconds."
@@ -226,3 +226,4 @@ SECRET_KEYS: frozenset[str] = frozenset(
         "TWIN_BEHAVIOR",
     }
 )
+

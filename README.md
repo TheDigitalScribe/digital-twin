@@ -160,7 +160,7 @@ See [`.env.example`](.env.example) for the full list. Key settings:
 | `RAG_MIN_SCORE`             |          | `0.25`                   | Minimum similarity for a chunk to be returned (filters generic filler)                                           |
 | `RAG_EAGER_ENABLED`         |          | `true`                   | Pre-fetch achievement context before the model call (recommended)                                                |
 | `LLM_TIMEOUT_SECONDS`       |          | `60`                     | Per-attempt timeout for chat-completions calls                                                                   |
-| `RATE_LIMIT_REQUESTS`       |          | `5`                      | Requests per IP per window                                                                                       |
+| `RATE_LIMIT_REQUESTS`       |          | `30`                     | Requests per IP per window                                                                                       |
 | `RATE_LIMIT_WINDOW_SECONDS` |          | `60`                     | Rate-limit window                                                                                                |
 | `TRUSTED_PROXIES`           |          | empty                    | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                       |
 | `TWIN_BEHAVIOR`             |          | default behavior         | Operator-tunable behavior text (never weakens core rules)                                                        |
