@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# Render Blueprint for the Digital Twin web service.
+#
+# Deploy: push this repo, then in Render choose "New → Blueprint" and point it
+# at your repository. Render creates the `digital-twin` service with the
+
+# settings below. It reads the Dockerfile, so the Docker context is the repo
+# root.
+#
+
+# Secrets are NOT declared here (they're set in the Render dashboard after the
+# Blueprint creates the service):
+#   * OPENAI_API_KEY and TWIN_BACKGROUND  -> Environment Variables
+#   * Achievements markdown               -> a "Secret File", and the mount
+#     path must be set so the file lands at container path
+#     /app/data/achievements/achievements.md
+#     (see docs/deployment.md §7 and the setup steps below).
+#
+
+# Why a Secret File and not a git commit: the raw achievement markdown and the
+# generated data/rag_index.json are gitignored AND dockerignored, so they never
+# enter the repo or the image. Render stores the Secret File encrypted at rest
+# and injects it only into the running container. On each container start
+# docker-entrypoint.sh runs `python -m digitaltwin.rag` to (re)build the RAG
+# index from that file. On Render's ephemeral free tier the index exists only
+# for the container's lifetime — exactly the intended privacy model.
+# ---------------------------------------------------------------------------
+services:
+  - type: web
+    name: digital-twin
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: OPENAI_API_KEY
+
+        sync: false # set privately in the dashboard
+      - key: TWIN_BACKGROUND
+
+        sync: false # set privately in the dashboard
+      - key: TRUSTED_PROXIES
+        # Render is the only reverse proxy in front of the app, and the client
+        # IP seen by the rate limiter comes from Render's X-Forwarded-For.
+        # Trust all proxies so each visitor gets their own rate-limit bucket.
+        # If you front Render with your own proxy, narrow this to that proxy's
+        # IP/range instead (see docs/deployment.md §1).
+        value: 0.0.0.0/0
+      - key: PYTHONUNBUFFERED
+        value: '1'
+
+# After the Blueprint creates the service, finish in the Render dashboard:
+#   1. Set OPENAI_API_KEY and TWIN_BACKGROUND  (Environment tab).
+#   2. Add a "Secret File" named `achievements.md` and set its mount path to
+#      /app/data/achievements/achievements.md — paste your private achievements
+#      markdown there (use one `##` heading per achievement; see rag.py).
+#   3. Trigger a deploy (Manual Deploy → Clear build cache & deploy).
+#
+# Your achievements stay out of git and out of the public image; the index is
+# rebuilt at container start.
+
