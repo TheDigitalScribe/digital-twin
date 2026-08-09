@@ -2,9 +2,9 @@
 
 A self-representing AI chat agent that answers career questions on a candidate — built on Gradio + OpenAI function calling with **defense-in-depth prompt-injection guardrails** and a **context-minimization architecture**.
 
-> **Why this project?** Most AI portfolio apps are thin wrappers around an API key. This one treats the model as an untrusted component and applies security engineering principles (least privilege, defense-in-depth, failure containment) to LLM application design.
+**Live demo:** https://digital-twin-6ije.onrender.com
 
----
+> Note: this demo runs on Render's free tier, so the first visit may take around a minute while the service wakes up.
 
 ## Highlights
 
