@@ -109,7 +109,9 @@ class LLMService:
                     "timeout": self.settings.llm_timeout_seconds,
                 }
                 # Forward the token cap under the parameter name the model expects.
-                request_kwargs[self.settings.max_tokens_param] = self.settings.max_output_tokens
+                request_kwargs[self._resolve_token_param(
+                    self.settings.model_name, self.settings.max_tokens_param
+                )] = self.settings.max_output_tokens
                 response = await self.client.chat.completions.create(**request_kwargs)
                 return response, attempt
             except Exception as exc:
@@ -141,6 +143,25 @@ class LLMService:
             model=self.settings.model_name,
             retries=retries,
         )
+
+    @staticmethod
+    def _resolve_token_param(model: str, override: str | None) -> str:
+        """Pick the API parameter name for the per-response token cap.
+
+        Newer OpenAI models (``gpt-5.x``, ``o``-series) require
+        ``max_completion_tokens``; legacy chat models (``gpt-3.5``/``gpt-4``/
+        ``gpt-4o``/``gpt-4.1``) require ``max_tokens`` and silently ignore the
+        other name — which is how ``MAX_OUTPUT_TOKENS`` could appear to have no
+        effect. An explicit ``MAX_TOKENS_PARAM`` override always wins; otherwise
+        the parameter is inferred from the configured model name.
+        """
+        if override is not None:
+            return override
+        import re
+
+        if re.match(r"^(gpt-5|o\d)", model.lower()):
+            return "max_completion_tokens"
+        return "max_tokens"
 
     @staticmethod
     def _should_retry(exc: Exception) -> bool:

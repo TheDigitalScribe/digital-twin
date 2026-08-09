@@ -48,12 +48,13 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum tokens the model may generate per response (cost/latency bound).",
     )
-    max_tokens_param: Literal["max_tokens", "max_completion_tokens"] = Field(
-        default="max_completion_tokens",
+    max_tokens_param: Literal["max_tokens", "max_completion_tokens"] | None = Field(
+        default=None,
         description=(
             "API parameter used to send the per-response token cap. Newer OpenAI "
             "models (e.g. gpt-5.x, o-series) require 'max_completion_tokens'; "
-            "older chat models (gpt-3.5/4) require 'max_tokens'."
+            "older chat models (gpt-3.5/4/4o/4.1) require 'max_tokens'. When unset, "
+            "the parameter is auto-selected from the configured model name."
         ),
     )
     max_background_chars: int = Field(
@@ -101,6 +102,14 @@ class Settings(BaseSettings):
             "Operator-tunable behavior text appended AFTER the core (non-overridable) "
             "security protocols. Can never weaken the core protocols."
         ),
+    )
+
+    # --- Presentation -------------------------------------------------------
+    # Optional display name of the twin's owner (e.g. "Mark"). When set, the
+    # UI/FastAPI title becomes "<name>'s Digital Twin"; otherwise just
+    # "Digital Twin".
+    twin_name: str = Field(
+        default="", description="Owner display name shown in the Digital Twin title."
     )
 
     # --- Achievements RAG -----------------------------------------------------

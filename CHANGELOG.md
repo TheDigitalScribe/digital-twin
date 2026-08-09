@@ -33,6 +33,16 @@ All notable changes to this project are documented here. Format follows
 - `MODEL_NAME` references fixed in docs and `.env.example`.
 - README rewritten; live demo link added.
 
+### Fixed
+
+- **`MAX_OUTPUT_TOKENS` silently ignored with the default `gpt-4.1-mini`**
+  model. The cap was being sent as `max_completion_tokens` (the previous
+  default), which legacy chat models ignore — so responses could exceed the
+  configured limit. The token-cap parameter is now auto-selected from the
+  model name (`max_tokens` for `gpt-3.5/4/4o/4.1`, `max_completion_tokens`
+  for `gpt-5.x`/`o`-series), with `MAX_TOKENS_PARAM` retained as an explicit
+  override.
+
 ### Removed
 
 - **Lead capture & SQLite persistence.** `digitaltwin/persistence.py`, the

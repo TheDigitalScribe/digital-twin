@@ -52,6 +52,12 @@ def _validate_env() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _twin_title() -> str:
+    """UI/FastAPI title, personalised with the configured owner name."""
+    name = get_settings().twin_name.strip()
+    return f"{name}'s Digital Twin" if name else "Digital Twin"
+
+
 def build_interface():
     """Build (but do not launch) the Gradio ChatInterface.
 
@@ -63,7 +69,7 @@ def build_interface():
     return gr.ChatInterface(
         handle_message,
         examples=EXAMPLES,
-        title="Digital Twin",
+        title=_twin_title(),
         description="Talk to my AI twin about my career",
         chatbot=gr.Chatbot(show_label=False),
     )
@@ -88,7 +94,7 @@ def build_app() -> FastAPI:
     import gradio as gr
 
     app = FastAPI(
-        title="Digital Twin",
+        title=_twin_title(),
         version=__version__,
         # Disable interactive API docs in production (reduce attack surface).
         docs_url=None,

@@ -167,12 +167,46 @@ class TestRunChat:
         await service.run_chat([{"role": "user", "content": "hi"}], retries=0)
         assert seen["tools"] == tools
         assert seen["model"] == "gpt-4.1-mini"
-        assert seen["max_completion_tokens"] == 1024
-        assert "max_tokens" not in seen
+        assert seen["max_tokens"] == 1024
+        assert "max_completion_tokens" not in seen
 
     @pytest.mark.anyio
-    async def test_max_tokens_param_respects_setting(self):
-        """Legacy models expecting `max_tokens` get that parameter instead."""
+    async def test_token_param_auto_selected_from_model(self):
+        """Token-cap param follows the model: legacy -> max_tokens, newer -> max_completion_tokens."""
+        cases = {
+            "gpt-4.1-mini": "max_tokens",
+            "gpt-4o": "max_tokens",
+            "gpt-5": "max_completion_tokens",
+            "o3": "max_completion_tokens",
+        }
+
+        async def capture_kwargs(model: str) -> dict:
+            seen = {}
+
+            class CapturingClient:
+                def __init__(self):
+                    self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+                async def _create(self, **kwargs):
+                    seen.update(kwargs)
+                    return FakeCompletion(FakeChoice("stop", content="ok"))
+
+            service = LLMService(
+                settings=Settings(_env_file=None, model_name=model, max_output_tokens=512),
+                client=CapturingClient(),
+            )
+            await service.run_chat([{"role": "user", "content": "hi"}], retries=0)
+            return seen
+
+        for model, expected in cases.items():
+            seen = await capture_kwargs(model)
+            assert seen[expected] == 512
+            other = "max_tokens" if expected == "max_completion_tokens" else "max_completion_tokens"
+            assert other not in seen
+
+    @pytest.mark.anyio
+    async def test_max_tokens_param_override_wins(self):
+        """Explicit MAX_TOKENS_PARAM takes precedence over model auto-detection."""
         seen = {}
 
         class CapturingClient:
@@ -183,8 +217,13 @@ class TestRunChat:
                 seen.update(kwargs)
                 return FakeCompletion(FakeChoice("stop", content="ok"))
 
-        settings = Settings(max_tokens_param="max_tokens", max_output_tokens=512)
+        # Legacy model (would auto-use max_tokens) forced to max_completion_tokens.
+        settings = Settings(
+            _env_file=None,
+            max_tokens_param="max_completion_tokens",
+            max_output_tokens=512,
+        )
         service = LLMService(settings=settings, client=CapturingClient())
         await service.run_chat([{"role": "user", "content": "hi"}], retries=0)
-        assert seen["max_tokens"] == 512
-        assert "max_completion_tokens" not in seen
+        assert seen["max_completion_tokens"] == 512
+        assert "max_tokens" not in seen
