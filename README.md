@@ -172,7 +172,7 @@ See [`.env.example`](.env.example) for the list of environment variables, includ
 | --------------------------- | -------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY` | ✅ | — | OpenAI (or compatible) API key |
 | `TWIN_BACKGROUND` | ✅ | — | Full candidate background (CV) text |
-| `MODEL_NAME` | | `gpt-5.4-mini` | Chat model (must support tools) |
+| `MODEL_NAME` | | `gpt-4.1-mini` | Chat model (must support tools) |
 
 ## Usage
 

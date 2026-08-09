@@ -10,6 +10,14 @@ from digitaltwin.llm import LLMError, LLMService
 from digitaltwin.tools import tools
 
 
+def test_model_name_can_be_configured_from_environment(monkeypatch):
+    monkeypatch.setenv("MODEL_NAME", "custom-chat-model")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.model_name == "custom-chat-model"
+
+
 class FakeError(Exception):
     def __init__(self, status_code=None, response=None):
         self.status_code = status_code
@@ -152,7 +160,10 @@ class TestRunChat:
                 seen.update(kwargs)
                 return FakeCompletion(FakeChoice("stop", content="ok"))
 
-        service = LLMService(settings=Settings(), client=CapturingClient())
+        service = LLMService(
+            settings=Settings(_env_file=None, max_output_tokens=1024),
+            client=CapturingClient(),
+        )
         await service.run_chat([{"role": "user", "content": "hi"}], retries=0)
         assert seen["tools"] == tools
         assert seen["model"] == "gpt-4.1-mini"
