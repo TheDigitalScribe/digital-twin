@@ -13,33 +13,39 @@ EXAMPLES = [
 
 CSS = """
 :root {
-  --twin-gold: #ecad0a;
-  --twin-blue: #209dd7;
-  --twin-purple: #753991;
-  --twin-bg: #0d0d10;
-  --twin-surface: #16161b;
-  --twin-surface-2: #1c1c22;
-  --twin-border: #2a2a32;
-  --twin-border-strong: #3a3a44;
-  --twin-text: #ececef;
-  --twin-muted: #8c8c95;
+  --twin-gold: #eab308;
+  --twin-blue: #2563eb;
+  --twin-purple: #7c3aed;
+  --twin-bg: #0f1115;
+  --twin-surface: #171a21;
+  --twin-surface-2: #1d222b;
+  --twin-border: #2b313c;
+  --twin-border-strong: #3a4250;
+  --twin-text: #f5f7fb;
+  --twin-muted: #9aa4b2;
 }
 
 /* Light mode: Gradio adds `.dark` to <body> when dark; absence = light.
    Only the neutral palette flips — gold/blue/purple accents stay identical. */
 body:not(.dark) {
-  --twin-bg: #f4f4f6;
+  --twin-bg: #f6f7fb;
   --twin-surface: #ffffff;
-  --twin-surface-2: #ededf0;
-  --twin-border: #dcdce2;
-  --twin-border-strong: #b8b8c0;
-  --twin-text: #1a1a20;
-  --twin-muted: #6a6a72;
+  --twin-surface-2: #f4f6fa;
+  --twin-border: #d9dee8;
+  --twin-border-strong: #c2cad7;
+  --twin-text: #10131a;
+  --twin-muted: #5f6977;
 }
 
 footer, .built-with, .show-api, .api-docs { display: none !important; }
 
-html, body, gradio-app { background: var(--twin-bg) !important; }
+html, body, gradio-app {
+  background: var(--twin-bg) !important;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
 
 /* ---------- Stable layout ---------- */
 .gradio-container {
@@ -47,12 +53,14 @@ html, body, gradio-app { background: var(--twin-bg) !important; }
   color: var(--twin-text) !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   width: 100% !important;
-  max-width: 880px !important;
+  max-width: 920px !important;
   min-width: 0 !important;
   margin: 0 auto !important;
-  padding: 32px 24px 48px !important;
+  padding: 40px 24px 56px !important;
 }
-.gradio-container .main, .gradio-container .contain, .gradio-container .wrap {
+.gradio-container .main,
+.gradio-container .contain,
+.gradio-container .wrap {
   width: 100% !important;
   max-width: 100% !important;
   min-width: 0 !important;
@@ -62,24 +70,37 @@ html, body, gradio-app { background: var(--twin-bg) !important; }
 /* ---------- Title ---------- */
 .gradio-container h1 {
   color: var(--twin-text) !important;
-  font-size: 26px !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.02em !important;
-  border-left: 3px solid var(--twin-gold);
-  padding-left: 12px !important;
-  margin: 4px 0 8px !important;
+  font-size: 2rem !important;
+  line-height: 1.15 !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.03em !important;
+  margin: 0 0 18px !important;
+  padding: 0 0 12px !important;
+  border-bottom: 1px solid var(--twin-border) !important;
   text-align: left !important;
 }
 
 /* ---------- Sharp corners on structural pieces ---------- */
-.chatbot, .chatbot *, .block, .form,
-button, input, textarea,
-.examples button {
-  border-radius: 0 !important;
+.chatbot,
+.block,
+.form {
+  border-radius: 16px !important;
+}
+
+button,
+input,
+textarea,
+.examples button,
+.icon-button {
+  border-radius: 10px !important;
 }
 
 /* ---------- Block surfaces ---------- */
-.block, .form { background: transparent !important; box-shadow: none !important; }
+.block,
+.form {
+  background: transparent !important;
+  box-shadow: none !important;
+}
 
 /* ---------- Hide the Chatbot label / header strip ---------- */
 .chatbot > .block-label,
@@ -91,11 +112,13 @@ button, input, textarea,
 }
 
 /* ---------- Chatbot frame ---------- */
-.chatbot, .chatbot.block {
+.chatbot,
+.chatbot.block {
   background: var(--twin-surface) !important;
   border: 1px solid var(--twin-border) !important;
-  min-height: 460px !important;
-  box-shadow: none !important;
+  min-height: 480px !important;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18) !important;
+  overflow: hidden !important;
 }
 .chatbot .placeholder, .chatbot .placeholder * { color: var(--twin-muted) !important; }
 
@@ -113,9 +136,11 @@ button, input, textarea,
 .message-row .message,
 .message-row .message-bubble,
 .message-row .bubble {
-  border: 0 !important;
-  box-shadow: none !important;
-  padding: 6px 10px !important;
+  border: 1px solid transparent !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  padding: 12px 16px !important;
+  margin: 0 0 12px !important;
+  border-radius: 12px !important;
 }
 
 /* ---------- Bubble backgrounds (broad to cover Gradio variants) ---------- */
@@ -179,7 +204,7 @@ button, input, textarea,
 .message-row .message,
 .message-row .message-bubble,
 .message-row .bubble {
-  font-size: 14px !important;
+  font-size: 12px !important;
   line-height: 1.55 !important;
 }
 .message-row .message p,
@@ -245,43 +270,60 @@ button, input, textarea,
 .chat-input-row,
 form[class*="input"] { align-items: stretch !important; }
 
-textarea, input[type="text"] {
+textarea,
+input[type="text"] {
   background: var(--twin-surface) !important;
   border: 1px solid var(--twin-border) !important;
   color: var(--twin-text) !important;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   font-size: 14px !important;
-  padding: 12px 14px !important;
-  line-height: 1.4 !important;
+  padding: 14px 16px !important;
+  line-height: 1.5 !important;
   min-height: 48px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02) !important;
 }
-textarea:focus, input[type="text"]:focus {
-  border-color: var(--twin-gold) !important;
+textarea:focus,
+input[type="text"]:focus {
+  border-color: var(--twin-blue) !important;
   outline: none !important;
-  box-shadow: 0 0 0 1px var(--twin-gold) !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16) !important;
 }
-textarea::placeholder, input::placeholder { color: var(--twin-muted) !important; }
+textarea::placeholder,
+input::placeholder {
+  color: var(--twin-muted) !important;
+}
 
 /* ---------- Buttons ---------- */
 button {
-  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace !important;
-  letter-spacing: 0.12em !important;
-  text-transform: uppercase !important;
-  font-size: 11px !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  letter-spacing: 0.01em !important;
+  text-transform: none !important;
+  font-size: 14px !important;
   font-weight: 600 !important;
   border: 1px solid var(--twin-border) !important;
-  background: transparent !important;
+  background: var(--twin-surface) !important;
   color: var(--twin-text) !important;
-  padding: 0 16px !important;
-  min-height: 48px !important;
+  padding: 0 18px !important;
+  min-height: 44px !important;
   align-self: stretch !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
-button:hover { border-color: var(--twin-gold) !important; color: var(--twin-gold) !important; }
+button:hover {
+  border-color: var(--twin-blue) !important;
+  color: var(--twin-text) !important;
+  background: var(--twin-surface-2) !important;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+button:focus-visible {
+  outline: 0 !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18) !important;
+}
 
 button.primary,
 button[variant="primary"],
@@ -289,23 +331,26 @@ button.submit,
 button.submit-button,
 .submit-button,
 button.lg.primary {
-  background: var(--twin-gold) !important;
-  border: 1px solid var(--twin-gold) !important;
+  background: linear-gradient(180deg, var(--twin-gold), #d99c0b) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
   color: #111111 !important;
-  min-height: 48px !important;
+  min-height: 44px !important;
   align-self: stretch !important;
-  padding: 0 14px !important;
+  padding: 0 18px !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
+  box-shadow: 0 10px 20px rgba(234, 179, 8, 0.18) !important;
 }
 button.primary:hover,
 button.submit:hover,
 .submit-button:hover,
 button.lg.primary:hover {
-  background: #ffc320 !important;
-  border-color: #ffc320 !important;
+  background: linear-gradient(180deg, #f6c43a, #eab308) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
   color: #111111 !important;
+  box-shadow: 0 14px 24px rgba(234, 179, 8, 0.24) !important;
+  transform: translateY(-1px);
 }
 
 /* ---------- Submit-button icon: center vertically and size correctly ---------- */
@@ -325,60 +370,96 @@ button[variant="primary"] svg {
 }
 
 /* ---------- Examples ---------- */
-.examples, .examples-holder, [data-testid="examples"] {
+.examples,
+.examples-holder,
+[data-testid="examples"] {
   background: transparent !important;
   padding: 0 !important;
-  margin-top: 14px !important;
+  margin-top: 16px !important;
 }
-.examples table, .examples-table { background: transparent !important; border: 0 !important; }
-.examples button, .example, .examples td button, [data-testid="examples"] button {
+.examples table,
+.examples-table {
+  background: transparent !important;
+  border: 0 !important;
+}
+.examples button,
+.example,
+.examples td button,
+[data-testid="examples"] button {
   background: var(--twin-surface) !important;
   border: 1px solid var(--twin-border) !important;
   color: var(--twin-text) !important;
   text-transform: none !important;
   letter-spacing: 0 !important;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   font-size: 13px !important;
-  font-weight: 400 !important;
-  padding: 10px 14px !important;
+  font-weight: 500 !important;
+  padding: 11px 14px !important;
   text-align: left !important;
   min-height: 0 !important;
   align-self: auto !important;
-  display: inline-block !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
 }
-.examples button:hover, .example:hover, [data-testid="examples"] button:hover {
+.examples button:hover,
+.example:hover,
+[data-testid="examples"] button:hover {
   border-color: var(--twin-blue) !important;
-  color: var(--twin-blue) !important;
-  background: var(--twin-surface) !important;
+  color: var(--twin-text) !important;
+  background: var(--twin-surface-2) !important;
 }
 
 /* ---------- Icon buttons (clear, retry, copy) ---------- */
-.icon-button, .chatbot .icon-button {
+.icon-button,
+.chatbot .icon-button {
   color: var(--twin-muted) !important;
   background: transparent !important;
   border: 0 !important;
   min-height: 0 !important;
   align-self: auto !important;
-  padding: 4px !important;
+  padding: 6px !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
 }
-.icon-button:hover, .chatbot .icon-button:hover { color: var(--twin-gold) !important; }
+.icon-button:hover,
+.chatbot .icon-button:hover {
+  color: var(--twin-blue) !important;
+}
 
 /* ---------- Scrollbar ---------- */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: var(--twin-bg); }
-::-webkit-scrollbar-thumb { background: var(--twin-border-strong); }
-::-webkit-scrollbar-thumb:hover { background: var(--twin-purple); }
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--twin-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--twin-border-strong);
+  border-radius: 999px;
+  border: 2px solid var(--twin-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--twin-purple);
+}
 
 /* ---------- Selection ---------- */
-::selection { background: var(--twin-gold); color: #111111; }
+::selection {
+  background: rgba(234, 179, 8, 0.32);
+  color: var(--twin-text);
+}
 
 /* ---------- Mobile ---------- */
 @media (max-width: 640px) {
-  .gradio-container { padding: 22px 14px 36px !important; }
-  .gradio-container h1 { font-size: 22px !important; }
+  .gradio-container {
+    padding: 20px 12px 28px !important;
+  }
+  .gradio-container h1 {
+    font-size: 1.6rem !important;
+    margin-bottom: 14px !important;
+  }
 }
 """
 

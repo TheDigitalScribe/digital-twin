@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     openai_base_url: str | None = Field(
         default=None, description="Optional base URL for an OpenAI-compatible endpoint."
     )
-    model_name: str = Field(default="gpt-5.4-mini", description="Chat model name.")
+    model_name: str = Field(default="gpt-4.1-mini", description="Chat model name.")
 
     # --- Conversation limits (cost / injection-surface control) ----------
     max_message_chars: int = Field(

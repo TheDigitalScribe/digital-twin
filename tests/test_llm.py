@@ -155,7 +155,7 @@ class TestRunChat:
         service = LLMService(settings=Settings(), client=CapturingClient())
         await service.run_chat([{"role": "user", "content": "hi"}], retries=0)
         assert seen["tools"] == tools
-        assert seen["model"] == "gpt-5.4-mini"
+        assert seen["model"] == "gpt-4.1-mini"
         assert seen["max_completion_tokens"] == 1024
         assert "max_tokens" not in seen
 
