@@ -18,8 +18,8 @@ Design notes
   them onto the LogRecord as attributes, so the formatter scans the record's
   ``__dict__`` for safe, non-reserved names and merges them into the payload.
 * The request id is captured onto the record at *creation* time (inside the
-  request's context) by ``_RequestIdInjector`` so it survives buffered or
-  queued handlers that format records later.
+    request's context) by a log-record factory so it survives buffered or
+    queued handlers that format records later.
 """
 
 from __future__ import annotations
@@ -85,8 +85,8 @@ class JSONFormatter(logging.Formatter):
         }
 
         # Merge structured fields passed via logging ``extra=``. The request
-        # id is captured onto the record at dispatch time (see
-        # ``_RequestIdInjector``) so it survives buffered/queued handlers that
+        # id is captured onto the record at creation time (see the
+        # ``_record_factory``) so it survives buffered/queued handlers that
         # format records later, possibly outside the request's context.
         for key, value in record.__dict__.items():
             if key in _RESERVED_ATTRS or key in payload:
@@ -106,40 +106,18 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(payload, default=str, ensure_ascii=False)
 
 
-class _RequestIdInjector(logging.Logger):
-    """Logger subclass that stamps the current request id onto each record.
-
-    The id is captured when the record is *created* (inside the request's
-    context) rather than when it is formatted, so even handlers that batch or
-    re-format records later keep the correct trace id.
-    """
-
-    def makeRecord(  # type: ignore[override]
-        self,
-        name: str,
-        level: int,
-        fn: str,
-        lno: int,
-        msg: object,
-        args: tuple[Any, ...],
-        exc_info: Any,
-        func: str | None = None,
-        extra: dict[str, Any] | None = None,
-        sinfo: Any = None,
-    ) -> logging.LogRecord:
-        record = super().makeRecord(
-            name, level, fn, lno, msg, args, exc_info, func, extra, sinfo
-        )
-        rid = request_id.get()
-        if rid:
-            record.request_id = rid  # type: ignore[attr-defined]
-        return record
+_LOG_RECORD_FACTORY = logging.getLogRecordFactory()
 
 
-# Make ``logging.getLogger`` return the request-id-aware subclass. This is
-# safe for third-party modules too: the injector is a no-op outside a request
-# context.
-logging.setLoggerClass(_RequestIdInjector)
+def _record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+    record = _LOG_RECORD_FACTORY(*args, **kwargs)
+    rid = request_id.get()
+    if rid:
+        record.request_id = rid  # type: ignore[attr-defined]
+    return record
+
+
+logging.setLogRecordFactory(_record_factory)
 
 
 _CONFIGURED = False
@@ -234,7 +212,7 @@ class _Counter:
             else:
                 self._value += amount
 
-    def render(self, name: str, help_text: str, label_names: tuple[str, ...] | None = None) -> list[str]:
+    def render(self, name: str, help_text: str) -> list[str]:
         lines = [f"# HELP {name} {help_text}", f"# TYPE {name} counter"]
         with self._lock:
             if not self._labels:
@@ -335,6 +313,12 @@ class Metrics:
             "Security events by kind (input_blocked, output_scrubbed, rate_limited).",
             ("kind",),
         ),
+        (
+            "digitaltwin_llm_tokens_total",
+            llm_tokens_total,
+            "LLM tokens consumed by kind (prompt, completion).",
+            ("kind",),
+        ),
     )
 
     _GAUGES: tuple[tuple[str, Any, str], ...] = (
@@ -346,8 +330,8 @@ class Metrics:
     def render_prometheus(cls) -> str:
         """Return the Prometheus text exposition of all registered metrics."""
         lines: list[str] = []
-        for name, collector, help_text, label_names in cls._COLLECTORS:
-            lines.extend(collector.render(name, help_text, label_names))
+        for name, collector, help_text, _label_names in cls._COLLECTORS:
+            lines.extend(collector.render(name, help_text))
         for name, collector, help_text in cls._GAUGES:
             lines.extend(collector.render(name, help_text))
         return "\n".join(lines) + "\n"

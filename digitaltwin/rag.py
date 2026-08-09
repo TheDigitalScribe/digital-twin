@@ -290,6 +290,26 @@ def _format_hits(hits: list[dict[str, str]]) -> str:
     )
 
 
+async def _query_achievements(question: str) -> list[dict[str, str]] | None:
+    settings = get_settings()
+
+    path = _resolve_path(settings.rag_index_path)
+    if not path.is_file():
+        return None
+
+    try:
+        return await query_index(
+            question,
+            _embed_texts,
+            top_k=settings.rag_top_k,
+            path=settings.rag_index_path,
+            min_score=settings.rag_min_score,
+        )
+    except RAGEmbeddingError as exc:
+        logger.error("RAG retrieval unavailable for question: %s", exc)
+        return None
+
+
 async def retrieve_achievements(question: str) -> str:
     """Return top-k achievement chunks relevant to ``question`` as plain text.
 
@@ -300,22 +320,13 @@ async def retrieve_achievements(question: str) -> str:
     infrastructure problem for a genuine lack of data.
     """
     settings = get_settings()
-
     path = _resolve_path(settings.rag_index_path)
     if not path.is_file():
         logger.info("rag_missing_index", extra={"event": "rag_query", "index_path": str(path)})
         return NO_INDEX_MESSAGE
 
-    try:
-        hits = await query_index(
-            question,
-            _embed_texts,
-            top_k=settings.rag_top_k,
-            path=settings.rag_index_path,
-            min_score=settings.rag_min_score,
-        )
-    except RAGEmbeddingError as exc:
-        logger.error("RAG retrieval unavailable for question: %s", exc)
+    hits = await _query_achievements(question)
+    if hits is None:
         return RETRIEVAL_UNAVAILABLE_MESSAGE
     if not hits:
         return NO_MATCH_MESSAGE
@@ -376,17 +387,10 @@ async def get_achievements_context(question: str) -> str | None:
         )
         return None
 
-    try:
-        hits = await query_index(
-            question,
-            _embed_texts,
-            top_k=settings.rag_top_k,
-            path=settings.rag_index_path,
-            min_score=settings.rag_min_score,
-        )
-    except Exception:
-        # Embedding errors surface as [] from query_index, but guard any
-        # unexpected exception so retrieval can never break the chat turn.
+    hits = await _query_achievements(question)
+    if hits is None:
+        # Keep the eager path silent on transient retrieval issues; the tool
+        # layer still reports a fuller message if the model asks directly.
         logger.exception("Unexpected RAG eager retrieval failure", extra={"event": "rag_eager"})
         return None
 

@@ -61,7 +61,7 @@ class TestLoadBackground:
 class TestSystemPromptMinimization:
     def test_full_background_not_in_system_prompt(self):
         full_bg = context.load_background()
-        prompt = context.TWIN_SYSTEM_PROMPT
+        prompt = context.get_system_prompt()
         # The full background must never be embedded verbatim in the prompt.
         # The sketch is at most 400 chars, so a long background can never fit.
         if len(full_bg) > context._IDENTITY_SKETCH_CHARS:
@@ -71,7 +71,7 @@ class TestSystemPromptMinimization:
 
     def test_system_prompt_stays_compact(self):
         # The prompt should be far smaller than the full background would be.
-        assert len(context.TWIN_SYSTEM_PROMPT) < 5000
+        assert len(context.get_system_prompt()) < 5000
 
     def test_sketch_only_in_identity_section(self):
         # Only the short sketch (<=400 chars) may appear in the prompt, while
@@ -79,19 +79,20 @@ class TestSystemPromptMinimization:
         full_bg = context.load_background()
         sketch = context._build_identity_sketch(full_bg)
         assert len(sketch) <= context._IDENTITY_SKETCH_CHARS
-        assert sketch in context.TWIN_SYSTEM_PROMPT
+        assert sketch in context.get_system_prompt()
         # If the background is longer than the sketch cap, the remainder must
         # not appear verbatim in the prompt.
         remainder = context._build_identity_sketch(full_bg[context._IDENTITY_SKETCH_CHARS:])
         if remainder:
-            assert remainder not in context.TWIN_SYSTEM_PROMPT
+            assert remainder not in context.get_system_prompt()
 
     def test_retrieve_background_tool_referenced_in_system_prompt(self):
-        assert "retrieve_background" in context.TWIN_SYSTEM_PROMPT
+        assert "retrieve_background" in context.get_system_prompt()
 
     def test_core_security_still_present(self):
-        assert "NON-NEGOTIABLE" in context.TWIN_SYSTEM_PROMPT
-        assert "S3. NO FABRICATION" in context.TWIN_SYSTEM_PROMPT
+        prompt = context.get_system_prompt()
+        assert "NON-NEGOTIABLE" in prompt
+        assert "S3. NO FABRICATION" in prompt
 
 
 # ---------------------------------------------------------------------------

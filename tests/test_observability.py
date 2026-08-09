@@ -106,7 +106,7 @@ class TestMetricsThreadSafety:
 
     def test_labelled_counter(self):
         Metrics.llm_tokens_total.inc(5, labels={"kind": "prompt"})
-        lines = Metrics.llm_tokens_total.render("m", "h", ("kind",))
+        lines = Metrics.llm_tokens_total.render("m", "h")
         assert any('kind="prompt"' in line for line in lines)
 
     def test_gauge_atomic_inc_dec(self):
@@ -142,6 +142,15 @@ class TestMetricsThreadSafety:
         text = Metrics.render_prometheus()
         assert "# TYPE digitaltwin_messages_received_total counter" in text
         assert "# TYPE digitaltwin_inflight_requests gauge" in text
+
+    def test_llm_tokens_metric_is_exported(self):
+        Metrics.llm_tokens_total.inc(5, labels={"kind": "prompt"})
+        text = Metrics.render_prometheus()
+        assert "# TYPE digitaltwin_llm_tokens_total counter" in text
+        assert any(
+            line.startswith('digitaltwin_llm_tokens_total{kind="prompt"} ')
+            for line in text.splitlines()
+        )
 
     def test_snapshot_is_json_serializable(self):
         snapshot = Metrics.snapshot()

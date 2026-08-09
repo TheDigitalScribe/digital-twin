@@ -12,6 +12,7 @@ lazily and cached, fetched on demand through the ``retrieve_background`` tool.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from .config import get_settings
@@ -172,5 +173,7 @@ answer only from the retrieved facts. Never invent details.
 """
 
 
-# Assembled once at import time.
-TWIN_SYSTEM_PROMPT = _assemble_system_prompt()
+@lru_cache(maxsize=1)
+def get_system_prompt() -> str:
+    """Return the cached system prompt, assembling it on first use."""
+    return _assemble_system_prompt()

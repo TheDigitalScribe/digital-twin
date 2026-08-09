@@ -151,13 +151,17 @@ class TestEagerRagContext:
         )
 
     @pytest.mark.anyio
-    async def test_maybe_rag_context_swallows_errors(self, monkeypatch):
+    async def test_maybe_rag_context_propagates_unexpected_errors(self, monkeypatch):
+        """Unexpected retrieval failures are not hidden: callers must decide
+        how to degrade, so an infrastructure outage is visible instead of
+        looking like a genuine lack of data."""
         async def boom(question: str) -> str | None:
             raise RuntimeError("embedding service down")
 
         monkeypatch.setattr(rag, "get_achievements_context", boom)
         handler = make_handler()
-        assert await handler._maybe_rag_context("What did you achieve?") is None
+        with pytest.raises(RuntimeError, match="embedding service down"):
+            await handler._maybe_rag_context("What did you achieve?")
 
     @pytest.mark.anyio
     async def test_eager_disabled_returns_none(self, monkeypatch):

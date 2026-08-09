@@ -34,43 +34,51 @@ class RetrieveAchievements(BaseModel):
     )
 
 
-# ---------------------------------------------------------
-# 2. Convert Pydantic Models to OpenAI Tool Format
-# ---------------------------------------------------------
+class _ToolSpec(BaseModel):
+    model: type[BaseModel]
+    description: str
 
-tools = [
-    {
+
+_TOOL_SPECS: dict[str, _ToolSpec] = {
+    "retrieve_background": _ToolSpec(
+        model=RetrieveBackground,
+        description=(
+            "Load the candidate's full background (skills, experience, education, "
+            "certifications, projects, contact details). Call this BEFORE answering "
+            "any specific question about the candidate when the answer is not already "
+            "in the Identity section. Returns the complete background text."
+        ),
+    ),
+    "retrieve_achievements": _ToolSpec(
+        model=RetrieveAchievements,
+        description=(
+            "Search the candidate's work-achievement knowledge base (semantic RAG "
+            "over markdown achievement files) and return the most relevant "
+            "achievements for the visitor's question. Call this when the user asks "
+            "about specific work achievements, results, project impact, metrics, or "
+            "accomplishments that may not be in the Identity section. Pass the "
+            "visitor's question as the 'question' argument. Returns the relevant "
+            "achievement chunks as text."
+        ),
+    ),
+}
+
+
+def _openai_tool_schema(name: str, spec: _ToolSpec) -> dict[str, Any]:
+    parameters = spec.model.model_json_schema()
+    if spec.model is RetrieveBackground:
+        parameters = {"type": "object", "properties": {}}
+    return {
         "type": "function",
         "function": {
-            "name": "retrieve_background",
-            "description": (
-                "Load the candidate's full background (skills, experience, education, "
-                "certifications, projects, contact details). Call this BEFORE answering "
-                "any specific question about the candidate when the answer is not already "
-                "in the Identity section. Returns the complete background text."
-            ),
-            # Deliberately the minimal schema (unchanged from the original
-            # hand-authored tool definition): no title/description clutter.
-            "parameters": {"type": "object", "properties": {}},
+            "name": name,
+            "description": spec.description,
+            "parameters": parameters,
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "retrieve_achievements",
-            "description": (
-                "Search the candidate's work-achievement knowledge base (semantic RAG "
-                "over markdown achievement files) and return the most relevant "
-                "achievements for the visitor's question. Call this when the user asks "
-                "about specific work achievements, results, project impact, metrics, or "
-                "accomplishments that may not be in the Identity section. Pass the "
-                "visitor's question as the 'question' argument. Returns the relevant "
-                "achievement chunks as text."
-            ),
-            "parameters": RetrieveAchievements.model_json_schema(),
-        },
-    },
-]
+    }
+
+
+tools = [_openai_tool_schema(name, spec) for name, spec in _TOOL_SPECS.items()]
 
 
 # ---------------------------------------------------------
@@ -112,8 +120,7 @@ TOOL_MAP: dict[str, Any] = {
 
 # Name -> Pydantic model used for runtime argument validation.
 _TOOL_SCHEMAS: dict[str, type[BaseModel]] = {
-    "retrieve_background": RetrieveBackground,
-    "retrieve_achievements": RetrieveAchievements,
+    name: spec.model for name, spec in _TOOL_SPECS.items()
 }
 
 

@@ -18,7 +18,7 @@ import threading
 from typing import Any
 
 from .config import Settings, get_settings
-from .context import TWIN_SYSTEM_PROMPT
+from .context import get_system_prompt
 from .llm import LLMError, LLMService
 from .observability import (
     Metrics,
@@ -195,7 +195,7 @@ class ChatHandler:
         """
         turns = history[-self.settings.max_history_turns :] if self.settings.max_history_turns else []
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": TWIN_SYSTEM_PROMPT}
+            {"role": "system", "content": get_system_prompt()}
         ]
         if rag_context:
             messages.append(
@@ -242,15 +242,7 @@ class ChatHandler:
         if not self.settings.rag_eager_enabled:
             return None
         from .rag import get_achievements_context
-
-        try:
-            return await get_achievements_context(question)
-        except Exception:
-            logger.exception(
-                "Eager RAG context retrieval failed (degrading to no context)",
-                extra={"event": "rag_eager_error"},
-            )
-            return None
+        return await get_achievements_context(question)
 
     @staticmethod
     def _extract_message_text(entry: Any) -> str:
