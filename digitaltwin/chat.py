@@ -120,24 +120,12 @@ class ChatHandler:
             )
             return DECLINE_INPUT
 
-        # 5) Layer A also applies to the bounded history we are about to send:
-        #    an injected payload can arrive via an older turn. Bounding helps,
-        #    but detection is better — scan the turns that will reach the model.
-        history_turns = history or []
-        if self.settings.max_history_turns > 0:
-            history_turns = history_turns[-self.settings.max_history_turns :]
-        for turn in history_turns:
-            user_part = turn[0] if isinstance(turn, (list, tuple)) else turn
-            user_text = self._extract_message_text(user_part)
-            if user_text and is_suspicious_request(user_text):
-                Metrics.input_blocked.inc()
-                log_security_event(
-                    logger,
-                    "input_blocked",
-                    ip=ip,
-                    reason="suspicious_history_turn",
-                )
-                return DECLINE_INPUT
+        # 5) Layer A also guards the history we are about to send: an injected
+        #    payload can arrive via an older turn. Bounding helps, but so does
+        #    filtering — suspicious turns are dropped in _build_messages below
+        #    rather than rejecting the whole request. (Hard-blocking here would
+        #    let one flagged message permanently lock the visitor out via their
+        #    own conversation history.)
 
         # 6) Build a bounded message list. Eager RAG context for
         #    achievement-like questions is fetched BEFORE the first model call
@@ -221,12 +209,23 @@ class ChatHandler:
             )
         for turn in turns:
             user_part = turn[0] if isinstance(turn, (list, tuple)) else turn
+            user_text_from_history = self._extract_message_text(user_part)
+            # Layer A on history: a flagged turn must never reach the model,
+            # but dropping it (rather than rejecting the whole request) keeps
+            # one bad message from locking the visitor out of the conversation.
+            if user_text_from_history and is_suspicious_request(user_text_from_history):
+                Metrics.input_blocked.inc()
+                log_security_event(
+                    logger,
+                    "input_blocked",
+                    reason="suspicious_history_turn_filtered",
+                )
+                continue
             assistant_part = (
                 turn[1]
                 if isinstance(turn, (list, tuple)) and len(turn) > 1
                 else ""
             )
-            user_text_from_history = self._extract_message_text(user_part)
             if user_text_from_history:
                 messages.append(
                     {"role": "user", "content": user_text_from_history}
