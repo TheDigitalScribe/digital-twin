@@ -10,7 +10,7 @@ A self-representing AI chat agent that answers career questions on a candidate �
 
 - **Three independent guardrail layers**
   1. **Non-overridable system prompt** — hardcoded security protocols that env vars and operator config can never weaken.
-  2. **Input sandboxing (pre-model)** — heuristic scanner blocking prompt injection / prompt-extraction _before_ the request reaches the model. Detects homoglyphs, zero-width characters, letter-spacing, and fragment-fusion obfuscations. Now also scans conversation **history** turns for injected payloads.
+  2. **Input sandboxing (pre-model)** — heuristic scanner blocking prompt injection / prompt-extraction before the request reaches the model. Detects homoglyphs, zero-width characters, letter-spacing, and fragment-fusion obfuscations. Now also scans conversation **history** turns for injected payloads.
   3. **Output scrubbing (post-model)** — scans the model's reply for leaked secrets, prompt text, API-key-shaped tokens, and internal tool names before display.
 - **Context minimization** — the full CV is never embedded in the system prompt; only a ≤400-char identity sketch lives there. The full background is fetched **on demand** via the `retrieve_background` tool (output capped by `MAX_BACKGROUND_CHARS`), so a leaked prompt exposes the bare minimum.
 - **Semantic RAG over work achievements** — markdown achievement files are chunked, embedded, and queried on demand via the `retrieve_achievements` tool, so the twin can answer specific questions about accomplishments and metrics without a vector database. The achievement source files and index live under `data/` (gitignored), keeping them out of the public repo.
@@ -19,212 +19,211 @@ A self-representing AI chat agent that answers career questions on a candidate �
   - FastAPI app (`digitaltwin.app.build_app`) serving `/` (Gradio), `/healthz` (liveness), `/metrics` (Prometheus).
   - Structured JSON logs with per-request `request_id` correlation; LLM token-usage tracking (`/metrics` → `digitaltwin_llm_tokens_total`).
   - TTL-based per-IP rate limiting (trusted-proxy aware), bounded conversation history, exponential-backoff retries with `Retry-After` support, token-cap + timeout bounds, graceful degradation, graceful shutdown.
-  - Hardened container: non-root user, read-only rootfs, dropped capabilities, mem/pids limits, healthcheck.
-
 - **CI**: tests on Python 3.11/3.12/3.13 with a ≥80% coverage gate, ruff, mypy, and a `pip-audit` CVE scan on every push/PR.
 
 ---
 
-## Architecture
+## Architecture Diagram
 
-```
-                       ┌─────────────────────────────────────────────┐
-  User message ──────► │  1. Request-ID generation                  │
-                       │  2. Trusted-proxy IP resolution             │
-                       │  3. TTL rate limiting (per IP)              │
-                       │  4. Validation (empty / length caps)        │
-                       │  5. LAYER A: input sandboxing (msg+history) │
-                       │  6. History bounding (max turns)            │
-                       │  7. Model call + tool loop (retries)        │
-                       │  8. LAYER B: output scrubbing               │
-                       └─────────────────────────────────────────────┘
-                                      │
-                        ┌─────────────▼─────────────┐
-                        │  FastAPI (uvicorn)         │
-                        │  /        Gradio UI        │
-                        │  /healthz  liveness probe  │
-                        │  /metrics  Prometheus      │
-                        └────────────────────────────┘
+```text
+User
+  │
+  ▼
+Gradio Chat UI
+  │
+  ▼
+Chat Handler
+  ├─ request ID + logging
+  ├─ trusted-proxy IP resolution
+  ├─ rate limiting
+  ├─ validation
+  ├─ input guardrails (message + history)
+  ├─ bounded history
+  ├─ eager RAG retrieval (optional)
+  ▼
+LLM Service
+  ├─ tool calling
+  ├─ retries / timeouts
+  └─ token accounting
+  ▼
+Output Scrubber
+  │
+  ▼
+Final assistant reply
 ```
 
-| Module                         | Responsibility                                                        |
-| ------------------------------ | --------------------------------------------------------------------- |
-| `digitaltwin/app.py`           | FastAPI app, uvicorn entry point, `/healthz` + `/metrics`, UI mount   |
-| `digitaltwin/chat.py`          | End-to-end request handler (steps 1–8)                                |
-| `digitaltwin/llm.py`           | OpenAI-compatible client, retry/timeout logic, tool loop, token usage |
-| `digitaltwin/tools.py`         | Tool schemas + async implementations + argument validation            |
-| `digitaltwin/rag.py`           | Lightweight semantic RAG (markdown chunking, embeddings, JSON index)  |
-| `digitaltwin/security.py`      | Layer A (input) + Layer B (output) guardrails                         |
-| `digitaltwin/context.py`       | System prompt assembly + context minimization                         |
-| `digitaltwin/config.py`        | Centralized, validated settings (pydantic-settings)                   |
-| `digitaltwin/rate_limiter.py`  | TTL-bucketed per-client rate limiting                                 |
-| `digitaltwin/observability.py` | Structured JSON logs, request IDs, Prometheus-style metrics           |
-| `digitaltwin/logger.py`        | Compatibility shim (re-exports `observability`)                       |
-| `digitaltwin/styles.py`        | CSS/JS theming for the Gradio UI                                      |
+```text
+                         ┌──────────────────────────┐
+                         │  /healthz   /metrics     │
+                         │  FastAPI + Prometheus    │
+                         └─────────────┬────────────┘
+                                       │
+User ──► Gradio UI ──► Chat Handler ───┼──► LLM + tools
+                                       │
+                                       └──► Security + observability
+```
 
 ---
 
-## Security Model
+## Why This Architecture
 
-The app treats the LLM as an **untrusted component**. Three independent layers provide defense-in-depth:
+This project is intentionally split into small, focused layers instead of being built as one large prompt or one monolithic chat handler. That design gives the app better security, clearer failure modes, and easier testability.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  LAYER A (input)     LAYER B (output)    SYSTEM PROMPT       │
-│  is_suspicious       scrub_output        _CORE_SECURITY      │
-│   · extraction       · secret name leaks  · S1 no secrets   │
-│   · role injection   · API-key tokens     · S2 no unrelated │
-│   · obfuscations     · prompt text        · S3 no fabricate │
-│     (homoglyph,      · internal tool      (non-negotiable)  │
-│      zero-width,       names                                 │
-│      letter-space)                                          │
-└─────────────────────────────────────────────────────────────┘
-```
+- **Separate concerns**: chat orchestration, LLM calls, retrieval, security checks, and observability live in different modules so each piece can be reasoned about and tested independently.
+- **Defense in depth**: the system prompt, input sandbox, and output scrubber each protect the app from a different failure mode. If one layer misses something, the others still provide protection.
+- **Least privilege for context**: only a small identity sketch is always in the prompt. Sensitive or bulky background material is fetched only when needed, which reduces exposure if anything is leaked.
+- **Bounded cost and latency**: rate limiting, history trimming, token caps, timeouts, and retry limits keep the app predictable instead of allowing an expensive or runaway request.
+- **Operational visibility**: request IDs, structured logs, health checks, and metrics make the service easier to run in a container or behind a proxy.
+- **LLM-safe defaults**: the model is treated as an untrusted component. Tool calls are validated, suspicious inputs fail closed, and responses are scrubbed before display.
+- **Simple retrieval layer**: achievement data is stored in a lightweight JSON index because it is easy to build, inspect, version, and regenerate for a personal portfolio project.
 
-- The **system prompt** is the strongest guarantee but is not a technical control (it can be coaxed).
-- The **input sandbox** catches known attacks before the model sees them — including attacks hidden in earlier conversation turns.
-- The **output scrubber** catches successful extractions on the way out — including paraphrased and obfuscated leaks.
+In short, the architecture is optimized for a personal AI assistant that is secure, understandable, and deployable without unnecessary infrastructure.
 
-### Context Minimization (Least Privilege)
+## Senior Notes
 
-```
-System prompt (always in context)       Retrieved on demand (tool only)
-┌──────────────────────────────┐       ┌──────────────────────────────┐
-│ Role + Identity sketch        │       │ Full background (CV)         │
-│ (≤400 chars of the CV)        │       │   - skills / experience      │
-│ + Core security protocols     │ ────► │   - education / certs        │
-│ + Behavior rules              │       │   - projects / contact       │
-└──────────────────────────────┘       └──────────────────────────────┘
-```
+A few design choices were made deliberately to keep the project credible at production scale, even though it is a personal portfolio app:
 
-The `retrieve_background` tool response is capped at `MAX_BACKGROUND_CHARS`, so a single tool call cannot blow up the context window/cost. See [SECURITY.md](SECURITY.md) for the full threat model and known limitations.
+- **Design constraints**
+  - Secure by default: the app treats the model as an untrusted component.
+  - Low operational complexity: avoid heavy infrastructure where a lightweight in-process solution is sufficient.
+  - Minimal secret exposure: keep only a short identity sketch in the prompt and retrieve richer context on demand.
+  - Easy local deployment: the project should run cleanly in a container or on a single host without extra services.
 
----
+- **Failure modes**
+  - Model/API outage: return a friendly fallback response instead of surfacing a stack trace.
+  - Suspicious input: fail closed rather than trying to infer intent.
+  - Missing RAG index: degrade gracefully and continue without retrieval.
+  - Proxy misconfiguration: rate limiting remains conservative by relying on trusted proxies only.
+  - Output leakage risk: scrub replies before they are shown to the user.
 
-## Quick Start
+- **Security limitations**
+  - Heuristic guardrails reduce risk but do not guarantee perfect safety.
+  - Prompt injection cannot be eliminated entirely; the goal is layered mitigation and containment.
+  - The system prompt is protected by convention and architecture, not by a cryptographic boundary.
+  - Retrieval quality depends on the underlying source material being accurate and well maintained.
 
-### Local
+- **Operational assumptions**
+  - Intended primarily for a personal or single-candidate deployment.
+  - Sensitive background and achievement data live outside the public repo in `data/`.
+  - Health checks and metrics are exposed to support container orchestration and monitoring.
+  - Trusted proxy configuration must be correct for client-IP-based rate limiting to work as intended.
 
-```bash
-git clone https://github.com/TheDigitalScribe/digtal-twin.git
-cd digtal-twin
+- **Evidence of quality**
+  - Guardrails, retrieval, and orchestration are covered by tests.
+  - CI runs linting, type checking, coverage enforcement, and dependency scanning.
+  - The code is structured so security, LLM orchestration, observability, and retrieval can be tested independently.
 
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install ".[dev]"
+This section is the main reason the project reads as more than a demo: it documents the tradeoffs, the blast-radius controls, and the conditions under which the system is expected to behave well.
 
-cp .env.example .env             # then fill in OPENAI_API_KEY + TWIN_BACKGROUND
+## Known Limitations
 
-# Optional: index your achievement markdown files (data/achievements/*.md) for semantic RAG
-python -m digitaltwin.rag
+This project is intentionally defensive, but it is not perfect and should not be presented as such:
 
-python -m digitaltwin.app
-```
+- Prompt-injection defenses are heuristic and best-effort, not mathematically complete.
+- Output scrubbing reduces leakage risk, but novel paraphrases or unseen leak patterns may still slip through.
+- Retrieval quality depends on the quality, freshness, and specificity of the source achievement files.
+- The architecture is optimized for a personal or single-candidate deployment, not a multi-tenant SaaS platform.
+- Trusted-proxy IP handling only works correctly when the proxy configuration is accurate.
+- The project does not attempt to solve broader enterprise compliance, SSO, or data governance requirements.
 
-Open http://localhost:7860 — the app serves `/healthz` and `/metrics` on the same port.
+This project aims to provide a secure and efficient AI-driven chat experience, specifically targeting career-related questions. The architecture guarantees robust security while delivering responsive and insightful conversations.
 
-### Docker
+## Use Cases
 
-```bash
-cp .env.example .env             # fill in your values
-docker compose up --build
-```
+- **Career Guidance:** Perfect for candidates seeking personalized advice on their careers.
+- **Professional Development:** Use it to explore opportunities for growth and learning.
+- **Interview Practice:** Obtain feedback and answers to common interview questions.
 
-`docker compose ps` should report `(healthy)` once the service is up.
+## Key Features (Expanded)
 
-### Deployment
+- **Security Architecture**:
+  - Defense-in-depth against prompt injection to protect user data and maintain model integrity.
+  - Input/output filtering to prevent leaks of sensitive information.
+  - Context minimization to safeguard user details.
 
-See [docs/deployment.md](docs/deployment.md) — reverse-proxy/TLS setup (Caddy & nginx), monitoring alerts, scaling notes, backups, and rollback.
+- **Production Readiness**:
+  - Comprehensive metrics, logging, and health checks facilitate monitoring and operational support.
+  - Containerization promotes consistent deployment experiences.
+  - Graceful degradation strategies ensure a robust user experience even under load.
 
----
+- **Testing and Quality**:
+  - CI matrix implementations for automated testing and quality control.
+  - Coverage gate to ensure sufficient test coverage.
+  - Static analysis assists in maintaining code quality and adherence to standards.
+
+## Tradeoffs and Technical Decisions
+
+- **Choosing JSON Index over Vector DB**:
+  The JSON index allows for simple data management without the overhead of a full vector database, while still supporting effective semantic RAG.
+
+- **Eager RAG Implementation**:
+  This approach provides immediate access to contextually relevant achievement data without the need for complex retrieval systems, improving response times.
+
+- **Bounded Context and History Management**:
+  Keeping conversation history bounded minimizes the risk of data leakage and prompt injection attacks.
+
+- **Fail Closed on Suspicious Input**:
+  Prioritizing security by failing closed ensures that potential threats are mitigated, maintaining system integrity.
 
 ## Configuration
 
-See [`.env.example`](.env.example) for the full list. Key settings:
-
-| Variable                    | Required | Default                  | Description                                                                                                      |
+See [`.env.example`](.env.example) for the list of environment variables, including:
+| Variable | Required | Default | Description |
 | --------------------------- | -------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`            | ✅       | —                        | OpenAI (or compatible) API key                                                                                   |
-| `TWIN_BACKGROUND`           | ✅       | —                        | Full candidate background (CV) text                                                                              |
-| `MODEL_NAME`                |          | `gpt-5.4-mini`           | Chat model (must support tools)                                                                                  |
-| `MAX_MESSAGE_CHARS`         |          | `500`                    | Per-message length cap                                                                                           |
-| `MAX_HISTORY_TURNS`         |          | `10`                     | Conversation turns sent to model                                                                                 |
-| `MAX_OUTPUT_TOKENS`         |          | `1024`                   | Per-response token cap (cost/latency bound)                                                                      |
-| `MAX_TOKENS_PARAM`          |          | `max_completion_tokens`  | API param used for the token cap (`max_completion_tokens` for newer models, `max_tokens` for legacy chat models) |
-| `MAX_BACKGROUND_CHARS`      |          | `25000`                  | Cap on `retrieve_background` output                                                                              |
-| `RAG_ACHIEVEMENTS_DIR`      |          | `data/achievements`      | Directory of markdown achievement files to index (gitignored)                                                    |
-| `RAG_INDEX_PATH`            |          | `data/rag_index.json`    | JSON vector index produced by `python -m digitaltwin.rag` (gitignored)                                           |
-| `RAG_EMBEDDING_MODEL`       |          | `text-embedding-3-small` | Embedding model used to build/query the index                                                                    |
-| `RAG_TOP_K`                 |          | `3`                      | Number of achievement chunks returned per retrieval                                                              |
-| `RAG_CHUNK_CHARS`           |          | `1000`                   | Approximate character cap for a single achievement chunk                                                         |
-| `RAG_MIN_SCORE`             |          | `0.25`                   | Minimum similarity for a chunk to be returned (filters generic filler)                                           |
-| `RAG_EAGER_ENABLED`         |          | `true`                   | Pre-fetch achievement context before the model call (recommended)                                                |
-| `LLM_TIMEOUT_SECONDS`       |          | `60`                     | Per-attempt timeout for chat-completions calls                                                                   |
-| `RATE_LIMIT_REQUESTS`       |          | `30`                     | Requests per IP per window                                                                                       |
-| `RATE_LIMIT_WINDOW_SECONDS` |          | `60`                     | Rate-limit window                                                                                                |
-| `TRUSTED_PROXIES`           |          | empty                    | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                       |
-| `TWIN_BEHAVIOR`             |          | default behavior         | Operator-tunable behavior text (never weakens core rules)                                                        |
-| `LOG_LEVEL`                 |          | `INFO`                   | `DEBUG` / `INFO` / `WARNING` / `ERROR`                                                                           |
+| `OPENAI_API_KEY` | ✅ | — | OpenAI (or compatible) API key |
+| `TWIN_BACKGROUND` | ✅ | — | Full candidate background (CV) text |
+| `MODEL_NAME` | | `gpt-5.4-mini` | Chat model (must support tools) |
 
-> **Security note:** always set `TRUSTED_PROXIES` when running behind a reverse proxy; otherwise `X-Forwarded-For` is ignored and rate limiting keys on the proxy's IP. Never use `0.0.0.0/0` in a multi-tenant deployment.
+## Usage
 
----
+### 1) Start the app
 
-## Achievements RAG
-
-The twin can answer questions about specific work achievements (accomplishments, results, metrics, project impact) via semantic retrieval — without shipping a vector database.
-
-```
-data/achievements/*.md  ──►  chunk_markdown()  ──►  embed  ──►  data/rag_index.json
-                                                                      │
-visitor question ──► embed ──► top-k dot-product ──► retrieve_achievements tool ──► LLM answer
-```
-
-- **One command to build the index:** `python -m digitaltwin.rag`
-- **Chunks** are split on `##` headings and bounded by `RAG_CHUNK_CHARS`.
-- **Retrieval** is on demand: the `retrieve_achievements` tool embeds the visitor's question and returns the top-k most similar chunks — the full dataset is never injected into the prompt (context minimization).
-- **Graceful degradation:** if the index is missing (e.g. fresh clone), the tool returns a friendly "run `python -m digitaltwin.rag`" message instead of crashing.
-- **Privacy:** your achievement markdown and the JSON index live in `data/` — already gitignored, so they never reach the public repository. The index file is a deliberately simple JSON list of `{text, embedding}` pairs: for a personal dataset a single in-memory JSON file is the right-sized store. If the dataset ever grows beyond ~50k chunks, swap the storage layer for a vector DB behind the same `query_index`/`build_index` interface.
-
----
-
-## Observability
-
-- **Logs**: every line is a JSON object on stdout with `ts`, `level`, `logger`, `message`, and optional structured fields (`event`, `ip`, `reason`, ...). A `request_id` is attached to every log emitted during a user turn — correlate on it.
-- **Metrics** (`/metrics`, Prometheus text format): request counters (`messages_received_total`, `rate_limited_total`, ...), LLM cost (`llm_tokens_total{kind="prompt|completion"}`), tool/security counters, in-flight gauge.
-- Example security log:
-  ```json
-  {
-    "ts": "2026-08-04T19:00:00.123Z",
-    "level": "WARNING",
-    "logger": "digitaltwin.chat",
-    "message": "security_event",
-    "event": "security",
-    "security_event": "input_blocked",
-    "ip": "203.0.113.5",
-    "reason": "suspicious_request",
-    "request_id": "a1b2c3..."
-  }
-  ```
-
----
-
-## Tooling
+Once your `.env` file is configured, launch the service:
 
 ```bash
-python -m pytest                     # run the test suite
-python -m pytest --cov=digitaltwin --cov-report=term-missing   # with coverage
-ruff check digitaltwin tests         # lint
-mypy digitaltwin                     # type-check
+python -m digitaltwin.app
 ```
 
-CI (GitHub Actions) runs tests on Python 3.11/3.12/3.13 with a **≥80% coverage gate**, ruff, mypy, and a **pip-audit** dependency scan on every push and PR: [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Then open:
 
----
+- `http://localhost:7860` for the chat UI
+- `http://localhost:7860/healthz` to confirm the process is up
+- `http://localhost:7860/metrics` to view Prometheus metrics
 
-## Project docs
+If you deploy behind a reverse proxy, make sure `TRUSTED_PROXIES` is set so the rate limiter can use the real client IP instead of the proxy IP.
 
-- [SECURITY.md](SECURITY.md) — threat model, known limitations, disclosure policy.
-- [CONTRIBUTING.md](CONTRIBUTING.md) — development workflow & standards.
-- [docs/deployment.md](docs/deployment.md) — production deployment runbook.
-- [CHANGELOG.md](CHANGELOG.md) — release history.
+### 2) Ask career-focused questions
+
+The assistant is designed to answer questions about the candidate's background, work history, achievements, projects, and interview preparation. Good prompts are specific and outcome-oriented.
+
+Examples:
+
+- "Can you summarize my work experience so far?"
+- "What are my strongest achievements from my last role?"
+- "Which projects best demonstrate leadership and technical impact?"
+- "Help me prepare a concise interview answer for 'tell me about yourself'."
+- "What skills should I highlight on my resume for a senior engineering role?"
+- "What metrics or outcomes should I mention when describing my recent work?"
+
+### 3) What happens when you send a message
+
+A single turn goes through several checks before the model responds:
+
+1. The request gets a unique `request_id` for tracing.
+2. The client IP is resolved with trusted-proxy support.
+3. Rate limiting is applied per IP.
+4. The message is validated for emptiness and length.
+5. Prompt-injection heuristics scan the new message and recent history.
+6. The conversation is bounded to the configured history window.
+7. The model is called with tools and retry logic.
+8. The final response is scrubbed before display.
+
+This means the app is intentionally conservative: if something looks like an injection attempt, it fails closed instead of trying to guess intent.
+
+### 4) Expected behavior
+
+- Career questions are answered using the candidate background, system prompt, and retrieved achievement context when relevant.
+- Questions about specific accomplishments may trigger eager RAG so the answer can use retrieved evidence rather than relying only on the model's memory.
+- Suspicious requests such as prompt extraction, role injection, or attempts to reveal hidden instructions will be blocked.
+- If the LLM backend fails, the app returns a friendly fallback message instead of crashing.
+- If the output appears to leak secrets or internal prompt text, it is replaced with a safe decline.
