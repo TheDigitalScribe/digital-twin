@@ -173,7 +173,9 @@ button, input, textarea,
 
 /* ---------- Uniform font size in bubbles ----------
    The "first paragraph different size" was caused by a leaky `.prose p:first-of-type`
-   selector. Force every paragraph in a bubble to the same size. */
+   selector. Force every paragraph in a bubble to the same size. Lists (`<ul>/<li>`)
+   rendered from markdown bullet points can otherwise inherit Gradio's larger default
+   markdown size, so they are matched here too and normalized to match the paragraphs. */
 .message-row .message,
 .message-row .message-bubble,
 .message-row .bubble {
@@ -183,7 +185,16 @@ button, input, textarea,
 .message-row .message p,
 .message-row .message-bubble p,
 .message-row .bubble p,
-.message-row .prose p {
+.message-row .prose p,
+.message-row .message li,
+.message-row .message-bubble li,
+.message-row .bubble li,
+.message-row .message ul,
+.message-row .message-bubble ul,
+.message-row .bubble ul,
+.message-row .message ol,
+.message-row .message-bubble ol,
+.message-row .bubble ol {
   font-size: 14px !important;
   line-height: 1.55 !important;
   margin: 0 0 8px !important;
@@ -192,7 +203,26 @@ button, input, textarea,
 .message-row .message p:last-child,
 .message-row .message-bubble p:last-child,
 .message-row .bubble p:last-child,
-.message-row .prose p:last-child { margin-bottom: 0 !important; }
+.message-row .prose p:last-child,
+.message-row .message li:last-child,
+.message-row .message-bubble li:last-child,
+.message-row .bubble li:last-child { margin-bottom: 0 !important; }
+
+/* Keep default list indentation + marker alignment but tidy the spacing. */
+.message-row .message ul,
+.message-row .message-bubble ul,
+.message-row .bubble ul,
+.message-row .message ol,
+.message-row .message-bubble ol,
+.message-row .bubble ol {
+  margin: 0 0 8px !important;
+  padding-left: 1.4em !important;
+}
+.message-row .message li,
+.message-row .message-bubble li,
+.message-row .bubble li {
+  margin-bottom: 4px !important;
+}
 
 /* Strip stray internal borders/backgrounds from anything inside a bubble */
 .message-row .message *,
