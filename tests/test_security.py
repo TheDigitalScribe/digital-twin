@@ -55,6 +55,11 @@ class TestNormalize:
 
 LEGITIMATE_MESSAGES = [
     "Tell me about your Python experience.",
+    # Regression: "summarize everything/all" about the career is a normal
+    # visitor question and must not be mistaken for a prompt-extraction attack.
+    "Can you summarize everything about your experience?",
+    "Please summarize your experience with Kubernetes.",
+    "Could you summarize all your projects?",
     "What projects are you most proud of?",
     "How many years of Kubernetes experience do you have?",
     "What is your experience with AWS?",

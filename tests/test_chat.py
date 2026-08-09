@@ -164,6 +164,19 @@ class TestEagerRagContext:
             await handler._maybe_rag_context("What did you achieve?")
 
     @pytest.mark.anyio
+    async def test_eager_rag_error_does_not_break_turn(self, monkeypatch):
+        """An unexpected eager-RAG failure must degrade to no context rather
+        than crash the whole turn (best-effort by design)."""
+        async def boom(question: str) -> str | None:
+            raise RuntimeError("embedding service down")
+
+        monkeypatch.setattr(rag, "get_achievements_context", boom)
+        handler = make_handler()
+        reply = await handler.handle_message("What did you achieve?", [], req())
+        # Answered normally from background knowledge (no fallback message).
+        assert reply == "A helpful answer."
+
+    @pytest.mark.anyio
     async def test_eager_disabled_returns_none(self, monkeypatch):
         called = []
 

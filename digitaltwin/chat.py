@@ -144,8 +144,16 @@ class ChatHandler:
         #    (best-effort; failures never break the turn) and injected as an
         #    additional system message. This removes the model's discretion as
         #    the single point of failure for retrieval.
+        try:
+            rag_context = await self._maybe_rag_context(message_text)
+        except Exception:
+            # _maybe_rag_context propagates unexpected failures on purpose so
+            # callers decide how to degrade; an outage here must never crash
+            # the turn — fall back to answering from background knowledge alone.
+            logger.exception("Eager RAG retrieval failed; continuing without context")
+            rag_context = None
         messages = self._build_messages(
-            history or [], message_text, rag_context=await self._maybe_rag_context(message_text)
+            history or [], message_text, rag_context=rag_context
         )
 
         # 7) Model call (+ tool loop) with graceful degradation.

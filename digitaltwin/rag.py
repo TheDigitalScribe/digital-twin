@@ -389,9 +389,10 @@ async def get_achievements_context(question: str) -> str | None:
 
     hits = await _query_achievements(question)
     if hits is None:
-        # Keep the eager path silent on transient retrieval issues; the tool
-        # layer still reports a fuller message if the model asks directly.
-        logger.exception("Unexpected RAG eager retrieval failure", extra={"event": "rag_eager"})
+        # Keep the eager path quiet on transient retrieval issues: the failure
+        # is already logged at error level inside _query_achievements, and the
+        # tool layer reports a fuller message if the model asks directly.
+        logger.debug("RAG eager retrieval unavailable", extra={"event": "rag_eager"})
         return None
 
     if not hits:

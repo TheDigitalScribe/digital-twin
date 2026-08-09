@@ -21,10 +21,13 @@ from .config import SECRET_KEYS
 EXTRACTION_PATTERNS = [
     r"system\s*prompt",
     r"initial\s*instructions",
-    r"summarize\s+.*\b(everything|prompt|instructions|rules|system prompt|settings|guidelines)\b",
+    # "summarize ..." only counts as an attack when it targets extraction
+    # nouns (prompt/instructions/rules/settings/...). A bare "summarize
+    # everything about your experience" is a normal career question and must
+    # pass the input sandbox.
+    r"summarize\s+(?:(?:everything|all|any|text|content)\s+(?:in|above|of|from)\s+)?(?:the|your|this|all|any)\s*(?:prompt|instructions|rules|settings|system\s*prompt|guidelines)",
     r"repeat\s*(everything|all|the|your)",
     r"what\s*(are|were|weren't)?\s*(your|the)\s*(instructions|rules|system|prompt|settings)",
-    r"summarize\s*(everything|all|the|this)",
     r"translate\s*(the|your|this)",
     r"print\s*the\s*prompt",
     r"jailbreak",

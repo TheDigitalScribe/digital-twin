@@ -186,8 +186,10 @@ async def _dispatch_tool(tool_name: str, args_text: str) -> str:
     func = TOOL_MAP[tool_name]
     try:
         result = await func(**validated.model_dump())
-    except Exception as exc:
+    except Exception:
         Metrics.tool_errors.inc()
         logger.exception("Tool %s raised during execution", tool_name)
-        return f"Error: tool execution failed: {exc}"
+        # Do not echo the exception text back to the model: it can contain
+        # internal paths / config details the model might relay to a visitor.
+        return "Error: tool execution failed."
     return result if isinstance(result, str) else json.dumps(result)
