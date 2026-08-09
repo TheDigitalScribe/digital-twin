@@ -6,41 +6,42 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
-### Removed
+### Added
 
-- **Lead capture & SQLite persistence removed.** `digitaltwin/persistence.py`,
-  the `record_user_details` / `record_unknown_question` tools, the
-  `LEADS_DB_PATH` setting, Pushover notifications, and the `data/` volume were
-  removed. Render's free tier is ephemeral, so visitor data cannot be
-  persisted; the app is now stateless (no volume or DB required).
-- `./data` volume removed from `docker-compose.yml`; `/data` directory removed
-  from the `Dockerfile`.
+- **Semantic RAG over achievement files.** `digitaltwin/rag.py` chunks and
+  embeds markdown achievement files into a lightweight JSON index
+  (`python -m digitaltwin.rag`). The `retrieve_achievements` tool, plus an
+  optional eager pre-fetch path, answers achievement-specific questions
+  without a vector database (`RAG_*` settings; see `.env.example`).
+- **Render deployment.** `render.yaml` Blueprint and `docker-entrypoint.sh`
+  that stage a mounted secrets file and (re)build the RAG index at container
+  start.
+- `digitaltwin_llm_tokens_total` is now rendered in `/metrics`; request-ID
+  injection switched from a custom Logger subclass to
+  `logging.setLogRecordFactory`.
 
 ### Changed
 
-- **Reduced input-sandbox false positives on legitimate career questions.**
-  The extraction pattern for `summarize` was narrowed so that asking the twin
-  to summarize the _candidate's_ skills/experience (e.g. "summarize the
-  candidate's experience", "summarize the strongest skills by backend, cloud,
-  data, or AI focus") is no longer blocked, while genuine prompt-extraction
-  phrasing ("summarize everything / the instructions / the prompt") is still
-  rejected before ever reaching the model.
-- **Loosened the `S2` core protocol phrasing** so the model treats summarizing
-  and discussing the candidate's skills, experience, and focus areas (backend,
-  cloud, data, AI/ML, DevOps) as in-scope, rather than over-refusing vaguely
-  framed but legitimate career questions. The actual boundaries (no unrelated
-  code/math/trivia, no secret leakage, no fabrication) are unchanged.
-- `MAX_TOKENS_PARAM` setting (`max_tokens` | `max_completion_tokens`)
-  selects the API parameter used for the per-response token cap. Defaults
-  to `max_completion_tokens`, which newer OpenAI models (e.g. `gpt-5.x`,
-  `o`-series) require; set `MAX_TOKENS_PARAM=max_tokens` for legacy chat
-  models (`gpt-3.5`/`gpt-4`).
+- **App is now stateless.** Lead capture and SQLite persistence were removed
+  (see Removed); `docker-compose.yml` no longer mounts a `data/` volume and
+  the `Dockerfile` no longer creates `/data`.
+- Per-IP rate limit raised from 5 to 30 requests per minute (default).
+- Default model changed back to `gpt-4.1-mini`; chat UI styling reworked
+  (including bullet-point rendering fixes).
+- System prompt is now assembled lazily (cached) instead of at import time;
+  tool and RAG registries deduplicated into single definitions.
+- `MODEL_NAME` references fixed in docs and `.env.example`.
+- README rewritten; live demo link added.
 
-### Fixed
+### Removed
 
-- LLM calls against newer models failed with
-  `Unsupported parameter: 'max_tokens' ... Use 'max_completion_tokens' instead.`
-  The token cap is now forwarded under the correct parameter name.
+- **Lead capture & SQLite persistence.** `digitaltwin/persistence.py`, the
+  `record_user_details` / `record_unknown_question` tools, the `LEADS_DB_PATH`
+  setting, Pushover notifications, and the `data/` volume were removed.
+  Render's free tier is ephemeral, so visitor data cannot be persisted; the
+  app no longer needs a volume or database.
+- `./data` volume removed from `docker-compose.yml`; `/data` directory removed
+  from the `Dockerfile`.
 
 ## [0.3.0] - 2026-08-04
 
@@ -87,12 +88,32 @@ All notable changes to this project are documented here. Format follows
   `digitaltwin/__init__.py`).
 - `.env.example` documents `MAX_OUTPUT_TOKENS`, `MAX_BACKGROUND_CHARS`,
   `LLM_TIMEOUT_SECONDS`, `TWIN_BEHAVIOR`.
+- **Reduced input-sandbox false positives on legitimate career questions.**
+  The extraction pattern for `summarize` was narrowed so that asking the twin
+  to summarize the _candidate's_ skills/experience (e.g. "summarize the
+  candidate's experience", "summarize the strongest skills by backend, cloud,
+  data, or AI focus") is no longer blocked, while genuine prompt-extraction
+  phrasing ("summarize everything / the instructions / the prompt") is still
+  rejected before ever reaching the model.
+- **Loosened the `S2` core protocol phrasing** so the model treats summarizing
+  and discussing the candidate's skills, experience, and focus areas (backend,
+  cloud, data, AI/ML, DevOps) as in-scope, rather than over-refusing vaguely
+  framed but legitimate career questions. The actual boundaries (no unrelated
+  code/math/trivia, no secret leakage, no fabrication) are unchanged.
+- `MAX_TOKENS_PARAM` setting (`max_tokens` | `max_completion_tokens`)
+  selects the API parameter used for the per-response token cap. Defaults
+  to `max_completion_tokens`, which newer OpenAI models (e.g. `gpt-5.x`,
+  `o`-series) require; set `MAX_TOKENS_PARAM=max_tokens` for legacy chat
+  models (`gpt-3.5`/`gpt-4`).
 
 ### Fixed
 
 - Docker image could not build: `pip install .` failed because `README.md`
   (declared as the package readme) was not copied into the build context.
   The Dockerfile now copies it before installing.
+- LLM calls against newer models failed with
+  `Unsupported parameter: 'max_tokens' ... Use 'max_completion_tokens' instead.`
+  The token cap is now forwarded under the correct parameter name.
 
 ## [0.2.0] - Initial version
 
