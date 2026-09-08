@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -18,34 +18,34 @@ license = { text = "MIT" }
 authors = [{ name = "Mark Higgins" }]
 dependencies = [
     # LLM client + validation
-    "openai==2.52.1",
-    "pydantic==2.13.4",
-    "pydantic[email]==2.13.4",
-    "pydantic-settings==2.14.2",
+    "openai==3.8.0",
+    "pydantic==2.13.5",
+    "pydantic[email]==2.13.5",
+    "pydantic-settings==2.15.0",
 
     # Web UI
-    "gradio==6.22.0",
+    "gradio==6.26.0",
 
     # ASGI server (production entry point)
-    "uvicorn==0.52.1",
+    "uvicorn==0.52.4",
 
     # HTTP client (tests use httpx ASGITransport)
     "httpx==0.28.1",
 
     # CV ingestion (PDF fallback)
-    "pypdf==6.14.2",
+    "pypdf==6.17.0",
 
     # Env loading
-    "python-dotenv==1.2.2",
+    "python-dotenv==1.2.3",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest==9.1.1",
-    "pytest-cov>=6,<8",
-    "anyio==4.14.2",
-    "ruff>=0.9,<1.0",
-    "mypy>=1.14,<2.0",
+    "pytest-cov>=7.1.0,<8",
+    "anyio==4.15.0",
+    "ruff>=0.16.6,<1.0",
+    "mypy>=2.3.1,<3.0",
 ]
 
 [tool.setuptools]
